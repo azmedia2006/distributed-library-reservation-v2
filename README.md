@@ -1,5 +1,5 @@
-# 📚 Hệ Thống Thư Viện & Đặt Mượn Sách Phân Tán
-### 🚀 Distributed Library Reservation System
+# Hệ Thống Thư Viện & Đặt Mượn Sách Phân Tán
+### Distributed Library Reservation System
 
 <p align="center">
   <img src="https://img.shields.io/badge/.NET-10.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 10" />
@@ -10,32 +10,32 @@
   <img src="https://img.shields.io/badge/Bootstrap-7952B3?style=for-the-badge&logo=bootstrap&logoColor=white" alt="Bootstrap 5" />
 </p>
 
-> 📖 **Học phần:** Phát triển ứng dụng phân tán  
-> 📌 **Đề tài số 20:** Hệ thống thư viện và đặt mượn sách phân tán (Xử lý hàng đợi bất đồng bộ với RabbitMQ, chống Overbooking, kiến trúc vi dịch vụ & Docker).
+> **Học phần:** Phát triển ứng dụng phân tán  
+> **Đề tài số 20:** Hệ thống thư viện và đặt mượn sách phân tán (Xử lý hàng đợi bất đồng bộ với RabbitMQ, chống Overbooking, kiến trúc vi dịch vụ & Docker).
 
 ---
 
-## 📑 Mục Lục
-- [🌟 1. Tổng Quan Bài Toán & Giải Pháp](#-1-tổng-quan-bài-toán--giải-pháp)
-- [🏛️ 2. Sơ Đồ Kiến Trúc Hệ Thống (Architecture Diagram)](#️-2-sơ-đồ-kiến-trúc-hệ-thống-architecture-diagram)
-- [🔄 3. Sơ Đồ Luồng Dữ Liệu & Hàng Đợi (Sequence Flow)](#-3-sơ-đồ-luồng-dữ-liệu--hàng-đợi-sequence-flow)
-- [⚡ 4. Công Nghệ & Điểm Nhấn Kỹ Thuật Nâng Cao](#-4-công-nghệ--điểm-nhấn-kỹ-thuật-nâng-cao)
-- [📂 5. Cấu Trúc Mã Nguồn Thư Mục](#-5-cấu-trúc-mã-nguồn-thư-mục)
-- [💻 6. Hướng Dẫn Cài Đặt & Vận Hành](#-6-hướng-dẫn-cài-đặt--vận-hành)
-  - [🪟 Dành cho người dùng Windows](#-hướng-dẫn-dành-cho-windows)
-  - [🐧 Dành cho người dùng Ubuntu / Linux](#-hướng-dẫn-dành-cho-ubuntu--linux)
-- [📡 7. Danh Sách RESTful API & Swagger](#-7-danh-sách-restful-api--swagger)
-- [🧪 8. Hướng Dẫn Kiểm Thử Tự Động & Kịch Bản Demo](#-8-hướng-dẫn-kiểm-thử-tự-động--kịch-bản-demo)
+## Mục Lục
+- [1. Tổng Quan Bài Toán & Giải Pháp](#1-tổng-quan-bài-toán--giải-pháp)
+- [2. Sơ Đồ Kiến Trúc Hệ Thống (Architecture Diagram)](#2-sơ-đồ-kiến-trúc-hệ-thống-architecture-diagram)
+- [3. Sơ Đồ Luồng Dữ Liệu & Hàng Đợi (Sequence Flow)](#3-sơ-đồ-luồng-dữ-liệu--hàng-đợi-sequence-flow)
+- [4. Công Nghệ & Điểm Nhấn Kỹ Thuật Nâng Cao](#4-công-nghệ--điểm-nhấn-kỹ-thuật-nâng-cao)
+- [5. Cấu Trúc Mã Nguồn Thư Mục](#5-cấu-trúc-mã-nguồn-thư-mục)
+- [6. Hướng Dẫn Cài Đặt & Vận Hành](#6-hướng-dẫn-cài-đặt--vận-hành)
+  - [Dành cho người dùng Windows](#hướng-dẫn-dành-cho-windows)
+  - [Dành cho người dùng Ubuntu / Linux](#hướng-dẫn-dành-cho-ubuntu--linux)
+- [7. Danh Sách RESTful API & Swagger](#7-danh-sách-restful-api--swagger)
+- [8. Hướng Dẫn Kiểm Thử Tự Động & Kịch Bản Demo](#8-hướng-dẫn-kiểm-thử-tự-động--kịch-bản-demo)
 
 ---
 
-## 🌟 1. Tổng Quan Bài Toán & Giải Pháp
+## 1. Tổng Quan Bài Toán & Giải Pháp
 
 Trong các hệ thống quản lý mượn sách truyền thống, các giao dịch kiểm tra số bản còn lại và lưu đơn thường được thực hiện **đồng bộ (synchronous)** trực tiếp vào Database. Khi lưu lượng độc giả truy cập tăng vọt:
-- ❌ **Race Condition & Overbooking:** Nhiều bạn đọc cùng đặt 1 cuốn sách cuối cùng, dẫn đến tình trạng kho bị âm hoặc quá tải.
-- ❌ **Database Bottleneck:** Khóa dòng (Row locks) gây nghẽn toàn bộ dịch vụ tra cứu sách.
+- **Race Condition & Overbooking:** Nhiều bạn đọc cùng đặt 1 cuốn sách cuối cùng, dẫn đến tình trạng kho bị âm hoặc quá tải.
+- **Database Bottleneck:** Khóa dòng (Row locks) gây nghẽn toàn bộ dịch vụ tra cứu sách.
 
-🎯 **Giải pháp phân tán áp dụng trong dự án:**
+**Giải pháp phân tán áp dụng trong dự án:**
 1. **Tiếp nhận tức thì (Non-blocking):** Client gửi yêu cầu -> API lưu trạng thái sơ bộ `Pending` -> Trả về `202 Accepted` ngay cho người dùng mà không cần chờ khóa dữ liệu.
 2. **Xếp hàng tin cậy qua Message Broker:** Đẩy thông điệp vào RabbitMQ (sử dụng Direct Exchange).
 3. **Background Worker Service:** Tiêu thụ thông điệp theo thứ tự, kiểm tra số lượng bản khả dụng trong Database:
@@ -45,7 +45,7 @@ Trong các hệ thống quản lý mượn sách truyền thống, các giao d�
 
 ---
 
-## 🏛️ 2. Sơ Đồ Kiến Trúc Hệ Thống (Architecture Diagram)
+## 2. Sơ Đồ Kiến Trúc Hệ Thống (Architecture Diagram)
 
 ```mermaid
 graph TD
@@ -79,7 +79,7 @@ graph TD
 
 ---
 
-## 🔄 3. Sơ Đồ Luồng Dữ Liệu & Hàng Đợi (Sequence Flow)
+## 3. Sơ Đồ Luồng Dữ Liệu & Hàng Đợi (Sequence Flow)
 
 ```mermaid
 sequenceDiagram
@@ -120,7 +120,7 @@ sequenceDiagram
 
 ---
 
-## ⚡ 4. Công Nghệ & Điểm Nhấn Kỹ Thuật Nâng Cao
+## 4. Công Nghệ & Điểm Nhấn Kỹ Thuật Nâng Cao
 
 Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ bản và các nội dung mở rộng theo quy định:
 
@@ -137,43 +137,43 @@ Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ b�
 
 ---
 
-## 📂 5. Cấu Trúc Mã Nguồn Thư Mục
+## 5. Cấu Trúc Mã Nguồn Thư Mục
 
 ```text
-📦 distributed-library-reservation
-├── 📄 20-he-thong-thu-vien-dat-muon-sach.md  # Yêu cầu chi tiết đề tài 20
-├── 📄 HUONG-DAN-CHUNG.md                     # Hướng dẫn chung của học phần
-├── 📄 BAO-CAO-BAI-TAP-LON.md                 # Quyển báo cáo bài tập lớn hoàn chỉnh
-├── 📄 LibraryDistributedSystem.slnx          # Solution file .NET 10
-├── 🐳 docker-compose.yml                     # File khởi chạy toàn bộ 5 dịch vụ
-├── 📄 README.md                              # Hướng dẫn chi tiết
-├── 📁 src/
-│   ├── 📁 Library.Domain/                    # Domain Entities (Book, User, Reservation) & Messages
-│   ├── 📁 Library.Infrastructure/            # EF Core DbContext, RabbitMQ Publisher & Constants
-│   ├── 📁 Library.API/                       # Minimal API, Swagger UI, Health Check
-│   ├── 📁 Library.Worker/                    # Background Service lắng nghe & xử lý Message từ RabbitMQ
-│   ├── 📁 Library.WebClient/                 # Giao diện Web Client & Reverse Proxy API
-│   └── 📁 Library.ConsoleClient/             # Giao diện Console Client (CLI App)
-└── 📁 tests/
-    └── 📁 Library.Tests/                     # Bộ kiểm thử Unit Test & Nghiệp vụ (xUnit)
+distributed-library-reservation
+├── 20-he-thong-thu-vien-dat-muon-sach.md  # Yêu cầu chi tiết đề tài 20
+├── HUONG-DAN-CHUNG.md                     # Hướng dẫn chung của học phần
+├── BAO-CAO-BAI-TAP-LON.md                 # Quyển báo cáo bài tập lớn hoàn chỉnh
+├── LibraryDistributedSystem.slnx          # Solution file .NET 10
+├── docker-compose.yml                     # File khởi chạy toàn bộ 5 dịch vụ
+├── README.md                              # Hướng dẫn chi tiết
+├── src/
+│   ├── Library.Domain/                    # Domain Entities (Book, User, Reservation) & Messages
+│   ├── Library.Infrastructure/            # EF Core DbContext, RabbitMQ Publisher & Constants
+│   ├── Library.API/                       # Minimal API, Swagger UI, Health Check
+│   ├── Library.Worker/                    # Background Service lắng nghe & xử lý Message từ RabbitMQ
+│   ├── Library.WebClient/                 # Giao diện Web Client & Reverse Proxy API
+│   └── Library.ConsoleClient/             # Giao diện Console Client (CLI App)
+└── tests/
+    └── Library.Tests/                     # Bộ kiểm thử Unit Test & Nghiệp vụ (xUnit)
 ```
 
 ---
 
-## 💻 6. Hướng Dẫn Cài Đặt & Vận Hành
+## 6. Hướng Dẫn Cài Đặt & Vận Hành
 
 ---
 
-### 🪟 Hướng Dẫn Dành Cho Windows
+### Hướng Dẫn Dành Cho Windows
 
-### 🪟 Hướng Dẫn Dành Cho Windows
+### Hướng Dẫn Dành Cho Windows
 
-#### ⚡ Cách 1: Khởi Chạy Nhanh 1-Click Bằng File `.bat` (Siêu tiện lợi & Nhanh nhất)
+#### Cách 1: Khởi Chạy Nhanh 1-Click Bằng File `.bat` (Siêu tiện lợi & Nhanh nhất)
 1. Đảm bảo **Docker Desktop for Windows** đang được mở và chạy (biểu tượng cá voi màu xanh).
 2. Click đúp chuột vào file:
-   - 🚀 **`start-windows.bat`**: Script sẽ tự động kiểm tra Docker, build toàn bộ 5 dịch vụ, khởi chạy hệ thống ngầm và **tự động mở trình duyệt Web Client** (`http://localhost:8088`).
-   - 🛑 **`stop-windows.bat`**: Dừng nhanh toàn bộ hệ thống và giải phóng tài nguyên RAM/CPU.
-   - 💻 **`run-console-windows.bat`**: Mở nhanh giao diện Console CLI tương tác bằng dòng lệnh.
+   - **`start-windows.bat`**: Script sẽ tự động kiểm tra Docker, build toàn bộ 5 dịch vụ, khởi chạy hệ thống ngầm và **tự động mở trình duyệt Web Client** (`http://localhost:8088`).
+   - **`stop-windows.bat`**: Dừng nhanh toàn bộ hệ thống và giải phóng tài nguyên RAM/CPU.
+   - **`run-console-windows.bat`**: Mở nhanh giao diện Console CLI tương tác bằng dòng lệnh.
 
 ---
 
@@ -193,9 +193,9 @@ Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ b�
      docker compose ps
      ```
 3. **Mở trình duyệt truy cập:**
-   - 🌐 **Giao diện Web Client:** [http://localhost:8088](http://localhost:8088)
-   - 📑 **Swagger API Docs:** [http://localhost:5005/swagger](http://localhost:5005/swagger)
-   - 🐰 **RabbitMQ Dashboard:** [http://localhost:15672](http://localhost:15672) *(Tài khoản: `guest` / `guest`)*
+   - **Giao diện Web Client:** [http://localhost:8088](http://localhost:8088)
+   - **Swagger API Docs:** [http://localhost:5005/swagger](http://localhost:5005/swagger)
+   - **RabbitMQ Dashboard:** [http://localhost:15672](http://localhost:15672) *(Tài khoản: `guest` / `guest`)*
 4. **Tắt hệ thống:**
    ```powershell
    docker compose down
@@ -227,7 +227,7 @@ Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ b�
 
 ---
 
-### 🐧 Hướng Dẫn Dành Cho Ubuntu / Linux
+### Hướng Dẫn Dành Cho Ubuntu / Linux
 
 #### Cách 1: Chạy tự động trọn gói bằng Docker Compose (Khuyến nghị số 1)
 1. **Kiểm tra Docker Compose:**
@@ -251,9 +251,9 @@ Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ b�
    docker compose logs -f library-api reservation-worker
    ```
 4. **Truy cập dịch vụ:**
-   - 🌐 **Giao diện Web:** [http://localhost:8088](http://localhost:8088)
-   - 📑 **Swagger UI:** [http://localhost:5005/swagger](http://localhost:5005/swagger)
-   - 🐰 **RabbitMQ Manager:** [http://localhost:15672](http://localhost:15672)
+   - **Giao diện Web:** [http://localhost:8088](http://localhost:8088)
+   - **Swagger UI:** [http://localhost:5005/swagger](http://localhost:5005/swagger)
+   - **RabbitMQ Manager:** [http://localhost:15672](http://localhost:15672)
 5. **Dừng hệ thống:**
    ```bash
    docker compose down
@@ -276,7 +276,7 @@ Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ b�
 
 ---
 
-## 📡 7. Danh Sách RESTful API & Swagger
+## 7. Danh Sách RESTful API & Swagger
 
 | Phương thức | Endpoint | Mô tả | Mã phản hồi |
 | :---: | :--- | :--- | :---: |
@@ -291,7 +291,7 @@ Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ b�
 
 ---
 
-## 🧪 8. Hướng Dẫn Kiểm Thử Tự Động & Kịch Bản Demo
+## 8. Hướng Dẫn Kiểm Thử Tự Động & Kịch Bản Demo
 
 ### 8.1. Chạy bộ kiểm thử tự động (Unit Test)
 Dự án được viết sẵn 4 test case chuyên sâu kiểm tra toàn diện nghiệp vụ đặt mượn:
