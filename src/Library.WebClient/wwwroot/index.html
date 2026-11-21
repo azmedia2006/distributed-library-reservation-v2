@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hệ thống Thư viện và Đặt mượn sách Phân tán</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .hero-header { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 2rem 0; margin-bottom: 2rem; border-radius: 0 0 1rem 1rem; }
+    .badge-status-Pending { background-color: #ffc107; color: #000; }
+    .badge-status-Reserved { background-color: #0d6efd; color: #fff; }
+    .badge-status-Rejected { background-color: #dc3545; color: #fff; }
+    .badge-status-Borrowed { background-color: #198754; color: #fff; }
+    .badge-status-Returned { background-color: #6c757d; color: #fff; }
+    .card-book { transition: transform 0.2s, box-shadow 0.2s; border-radius: 0.75rem; }
+    .card-book:hover { transform: translateY(-3px); box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15); }
+  </style>
+</head>
+<body>
+
+<div class="hero-header text-center">
+  <div class="container">
+    <h1 class="fw-bold"><i class="bi bi-book-half me-2"></i>Hệ Thống Thư Viện Phân Tán</h1>
+    <p class="mb-0 fs-5 text-light opacity-75">Kiến trúc Distributed: WebClient &bull; Minimal API &bull; RabbitMQ Async &bull; Reservation Worker &bull; PostgreSQL</p>
+  </div>
+</div>
+
+<div class="container pb-5">
+  <!-- Status alerts -->
+  <div id="alertBox"></div>
+
+  <!-- Chọn User -->
+  <div class="card mb-4 border-0 shadow-sm">
+    <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-person-circle fs-3 text-primary"></i>
+        <div>
+          <label class="form-label mb-0 fw-bold">Người dùng hiện tại:</label>
+          <select id="userSelect" class="form-select form-select-sm" style="min-width: 250px;" onchange="loadUserReservations()">
+            <option value="">Đang tải danh sách người dùng...</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-outline-primary btn-sm me-2" onclick="loadBooks()"><i class="bi bi-arrow-clockwise"></i> Làm mới Sách</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="loadUserReservations()"><i class="bi bi-clock-history"></i> Lịch sử của tôi</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Danh sách sách -->
+    <div class="col-lg-7">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white py-3">
+          <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-journal-bookmark me-2"></i>Danh Sách Sách Trong Thư Viện</h5>
+        </div>
+        <div class="card-body">
+          <div id="bookList" class="row g-3">
+            <div class="text-center py-4 text-muted"><div class="spinner-border text-primary"></div><p class="mt-2">Đang tải danh sách sách...</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lịch sử đặt mượn của user & Tra cứu -->
+    <div class="col-lg-5">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+          <h5 class="mb-0 fw-bold text-success"><i class="bi bi-card-checklist me-2"></i>Đơn Đặt Mượn Của Tôi</h5>
+        </div>
+        <div class="card-body">
+          <div id="reservationList">
+            <p class="text-muted text-center py-3">Chọn người dùng để xem lịch sử đặt mượn</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tra cứu đơn theo ID -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+          <h5 class="mb-0 fw-bold text-info"><i class="bi bi-search me-2"></i>Tra Cứu Theo Mã Đặt Mượn (ID)</h5>
+        </div>
+        <div class="card-body">
+          <div class="input-group mb-3">
+            <input type="text" id="lookupIdInput" class="form-control" placeholder="Nhập mã Reservation GUID...">
+            <button class="btn btn-info text-white" onclick="lookupReservation()"><i class="bi bi-search"></i> Tra cứu</button>
+          </div>
+          <div id="lookupResult"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let API_BASE_URL = 'http://localhost:5005';
+
+  async function init() {
+    try {
+      const cfgRes = await fetch('/config');
+      if (cfgRes.ok) {
+        const cfg = await cfgRes.json();
+        if (cfg.apiBaseUrl) API_BASE_URL = cfg.apiBaseUrl;
+      }
+    } catch (e) {
+      console.log('Using default API url', e);
+    }
+
+    await loadUsers();
+    await loadBooks();
+    loadUserReservations();
+  }
+
+  function showAlert(msg, type = 'success') {
+    const alertBox = document.getElementById('alertBox');
+    alertBox.innerHTML = `
+      <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        ${msg}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>`;
+    setTimeout(() => { alertBox.innerHTML = ''; }, 6000);
+  }
+
+  async function loadUsers() {
+    try {
+      const res = await fetch(`${API_BASE_URL}/users`);
+      const users = await res.json();
+      const sel = document.getElementById('userSelect');
+      sel.innerHTML = users.map(u => `<option value="${u.id}">${u.fullName} (${u.email})</option>`).join('');
+    } catch (e) {
+      console.error(e);
+      showAlert('Không thể kết nối tới Library API', 'danger');
+    }
+  }
+
+  async function loadBooks() {
+    try {
+      const res = await fetch(`${API_BASE_URL}/books`);
+      const books = await res.json();
+      const list = document.getElementById('bookList');
+      if (books.length === 0) {
+        list.innerHTML = '<div class="col-12 text-center text-muted">Chưa có sách nào.</div>';
+        return;
+      }
+
+      list.innerHTML = books.map(b => `
+        <div class="col-12">
+          <div class="card card-book border p-3">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h5 class="fw-bold mb-1 text-dark">${b.title}</h5>
+                <div class="text-muted small mb-2"><i class="bi bi-pen"></i> Tác giả: ${b.author} | ISBN: ${b.isbn}</div>
+                <p class="small text-secondary mb-2">${b.description}</p>
+                <div>
+                  <span class="badge ${b.availableCopies > 0 ? 'bg-success' : 'bg-danger'}">
+                    <i class="bi bi-stack"></i> Khả dụng: ${b.availableCopies} / ${b.totalCopies}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <button class="btn btn-primary btn-sm px-3" 
+                        onclick="reserveBook('${b.id}')"
+                        ${b.availableCopies <= 0 ? 'disabled' : ''}>
+                  <i class="bi bi-bookmark-plus"></i> Đặt Sách
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      console.error(e);
+      showAlert('Lỗi khi tải danh sách sách!', 'danger');
+    }
+  }
+
+  async function reserveBook(bookId) {
+    const userId = document.getElementById('userSelect').value;
+    if (!userId) {
+      showAlert('Vui lòng chọn người dùng!', 'warning');
+      return;
+    }
+
+    try {
+      showAlert('<div class="spinner-border spinner-border-sm me-2"></div>Đang gửi yêu cầu đặt mượn vào RabbitMQ...', 'info');
+      const res = await fetch(`${API_BASE_URL}/reservations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookId, userId })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        showAlert(err.message || 'Lỗi đặt sách', 'danger');
+        return;
+      }
+
+      const data = await res.json();
+      showAlert(`<strong>Yêu cầu đã được gửi thành công!</strong> (Mã: <code>${data.id}</code>)<br>Worker đang bất đồng bộ xử lý trạng thái. Tự động kiểm tra sau 2 giây...`, 'success');
+
+      // Tự động kiểm tra kết quả sau 2s khi worker xử lý xong
+      setTimeout(async () => {
+        await loadBooks();
+        await loadUserReservations();
+      }, 2000);
+
+    } catch (e) {
+      console.error(e);
+      showAlert('Không thể kết nối API', 'danger');
+    }
+  }
+
+  async function loadUserReservations() {
+    const userId = document.getElementById('userSelect').value;
+    if (!userId) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${userId}/reservations`);
+      const items = await res.json();
+      const container = document.getElementById('reservationList');
+
+      if (items.length === 0) {
+        container.innerHTML = '<p class="text-center text-muted py-3">Người dùng này chưa có đơn đặt mượn nào.</p>';
+        return;
+      }
+
+      container.innerHTML = items.map(r => `
+        <div class="border rounded p-3 mb-2 bg-light">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong class="text-primary">${r.bookTitle || 'Sách'}</strong>
+            <span class="badge badge-status-${r.status}">${r.status}</span>
+          </div>
+          <div class="small text-muted mb-1">Mã đơn: <code>${r.id}</code></div>
+          <div class="small text-secondary mb-2">${r.reasonMessage || 'Đang chờ worker kiểm tra số bản khả dụng...'}</div>
+          
+          <div class="d-flex gap-2">
+            ${r.status === 'Reserved' ? `
+              <button class="btn btn-outline-success btn-sm py-0" onclick="updateStatus('${r.id}', 3)">
+                <i class="bi bi-box-arrow-down"></i> Nhận sách (Borrowed)
+              </button>` : ''}
+            ${r.status === 'Borrowed' ? `
+              <button class="btn btn-outline-secondary btn-sm py-0" onclick="updateStatus('${r.id}', 4)">
+                <i class="bi bi-arrow-return-left"></i> Trả sách (Returned)
+              </button>` : ''}
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function updateStatus(reservationId, newStatus) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/reservations/${reservationId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newStatus })
+      });
+      if (res.ok) {
+        showAlert('Cập nhật trạng thái thành công!', 'success');
+        await loadBooks();
+        await loadUserReservations();
+      } else {
+        const err = await res.json();
+        showAlert(err.message || 'Lỗi cập nhật', 'danger');
+      }
+    } catch (e) {
+      showAlert('Lỗi kết nối API', 'danger');
+    }
+  }
+
+  async function lookupReservation() {
+    const id = document.getElementById('lookupIdInput').value.trim();
+    const resultBox = document.getElementById('lookupResult');
+    if (!id) {
+      resultBox.innerHTML = '<div class="alert alert-warning py-2">Vui lòng nhập ID hợp lệ!</div>';
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/reservations/${id}`);
+      if (!res.ok) {
+        resultBox.innerHTML = '<div class="alert alert-danger py-2">Không tìm thấy yêu cầu đặt mượn với ID này.</div>';
+        return;
+      }
+      const data = await res.json();
+      resultBox.innerHTML = `
+        <div class="alert alert-light border py-2">
+          <div class="fw-bold mb-1">${data.bookTitle}</div>
+          <div class="small">Người đặt: <strong>${data.userName}</strong></div>
+          <div class="small mb-1">Trạng thái: <span class="badge badge-status-${data.status}">${data.status}</span></div>
+          <div class="small text-muted">${data.reasonMessage || 'Chưa có thông báo'}</div>
+        </div>`;
+    } catch (e) {
+      resultBox.innerHTML = '<div class="alert alert-danger py-2">Lỗi tra cứu!</div>';
+    }
+  }
+
+  window.onload = init;
+</script>
+</body>
+</html>

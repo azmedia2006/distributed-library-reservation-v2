@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Library.API/Library.API.csproj" />
+    <Project Path="src/Library.Domain/Library.Domain.csproj" />
+    <Project Path="src/Library.Infrastructure/Library.Infrastructure.csproj" />
+    <Project Path="src/Library.WebClient/Library.WebClient.csproj" />
+    <Project Path="src/Library.Worker/Library.Worker.csproj" />
+  </Folder>
+</Solution>
