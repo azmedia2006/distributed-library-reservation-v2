@@ -86,7 +86,7 @@ services:
     container_name: library_web_client
     restart: always
     environment:
-      ApiUrl: "http://localhost:5005"
+      ApiUrl: "http://library-api:5000"
     ports:
       - "8088:8080"
     depends_on:

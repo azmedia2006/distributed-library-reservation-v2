@@ -3,90 +3,149 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hệ thống Thư viện và Đặt mượn sách Phân tán</title>
+  <title>Hệ Thống Thư Viện - Đặt Mượn Sách Phân Tán</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <style>
-    body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    .hero-header { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 2rem 0; margin-bottom: 2rem; border-radius: 0 0 1rem 1rem; }
-    .badge-status-Pending { background-color: #ffc107; color: #000; }
-    .badge-status-Reserved { background-color: #0d6efd; color: #fff; }
-    .badge-status-Rejected { background-color: #dc3545; color: #fff; }
-    .badge-status-Borrowed { background-color: #198754; color: #fff; }
-    .badge-status-Returned { background-color: #6c757d; color: #fff; }
-    .card-book { transition: transform 0.2s, box-shadow 0.2s; border-radius: 0.75rem; }
-    .card-book:hover { transform: translateY(-3px); box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15); }
+    body {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .navbar {
+      background-color: #0f172a;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .card-header {
+      background-color: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      font-weight: 600;
+    }
+    .book-item {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      transition: border-color 0.15s;
+    }
+    .book-item:hover {
+      border-color: #cbd5e1;
+    }
+    .badge-status {
+      font-weight: 600;
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 4px;
+    }
+    .status-Pending { background-color: #fef3c7; color: #92400e; }
+    .status-Reserved { background-color: #dbeafe; color: #1e40af; }
+    .status-Rejected { background-color: #fee2e2; color: #991b1b; }
+    .status-Borrowed { background-color: #dcfce7; color: #166534; }
+    .status-Returned { background-color: #f1f5f9; color: #475569; }
+    .system-badge {
+      font-size: 0.75rem;
+      background-color: #334155;
+      color: #f8fafc;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
 
-<div class="hero-header text-center">
-  <div class="container">
-    <h1 class="fw-bold"><i class="bi bi-book-half me-2"></i>Hệ Thống Thư Viện Phân Tán</h1>
-    <p class="mb-0 fs-5 text-light opacity-75">Kiến trúc Distributed: WebClient &bull; Minimal API &bull; RabbitMQ Async &bull; Reservation Worker &bull; PostgreSQL</p>
+<!-- Navbar -->
+<nav class="navbar navbar-dark py-2 mb-4">
+  <div class="container d-flex justify-content-between align-items-center">
+    <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold fs-5 mb-0" href="#">
+      <i class="bi bi-book text-primary"></i>
+      Thư Viện Điện Tử (Đề tài 20)
+    </a>
+    <div class="d-none d-md-flex align-items-center gap-2">
+      <span class="system-badge">ASP.NET Core Minimal API</span>
+      <span class="system-badge">RabbitMQ Async</span>
+      <span class="system-badge">Worker</span>
+      <span class="system-badge">PostgreSQL</span>
+    </div>
   </div>
-</div>
+</nav>
 
 <div class="container pb-5">
-  <!-- Status alerts -->
+  <!-- Thông báo trạng thái -->
   <div id="alertBox"></div>
 
-  <!-- Chọn User -->
-  <div class="card mb-4 border-0 shadow-sm">
-    <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3">
-      <div class="d-flex align-items-center gap-2">
-        <i class="bi bi-person-circle fs-3 text-primary"></i>
-        <div>
-          <label class="form-label mb-0 fw-bold">Người dùng hiện tại:</label>
-          <select id="userSelect" class="form-select form-select-sm" style="min-width: 250px;" onchange="loadUserReservations()">
-            <option value="">Đang tải danh sách người dùng...</option>
-          </select>
-        </div>
+  <!-- Thanh chọn người dùng & thao tác nhanh -->
+  <div class="card mb-4">
+    <div class="card-body py-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+      <div class="d-flex align-items-center gap-3">
+        <label for="userSelect" class="form-label mb-0 fw-semibold text-secondary small text-nowrap">
+          <i class="bi bi-person me-1"></i>Bạn đọc hiện tại:
+        </label>
+        <select id="userSelect" class="form-select form-select-sm" style="min-width: 260px;" onchange="loadUserReservations()">
+          <option value="">Đang tải danh sách bạn đọc...</option>
+        </select>
       </div>
-      <div>
-        <button class="btn btn-outline-primary btn-sm me-2" onclick="loadBooks()"><i class="bi bi-arrow-clockwise"></i> Làm mới Sách</button>
-        <button class="btn btn-outline-secondary btn-sm" onclick="loadUserReservations()"><i class="bi bi-clock-history"></i> Lịch sử của tôi</button>
+      <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-outline-secondary btn-sm" onclick="loadBooks()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Làm mới sách
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="loadUserReservations()">
+          <i class="bi bi-clock-history me-1"></i>Lịch sử mượn
+        </button>
       </div>
     </div>
   </div>
 
   <div class="row g-4">
-    <!-- Danh sách sách -->
+    <!-- Cột trái: Danh mục sách -->
     <div class="col-lg-7">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white py-3">
-          <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-journal-bookmark me-2"></i>Danh Sách Sách Trong Thư Viện</h5>
+      <div class="card h-100">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-collection me-2 text-primary"></i>Danh mục sách thư viện</span>
+          <span id="bookCountBadge" class="badge bg-secondary">0 đầu sách</span>
         </div>
-        <div class="card-body">
-          <div id="bookList" class="row g-3">
-            <div class="text-center py-4 text-muted"><div class="spinner-border text-primary"></div><p class="mt-2">Đang tải danh sách sách...</p></div>
+        <div class="card-body p-3">
+          <div id="bookList">
+            <div class="text-center py-4 text-muted">
+              <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+              <p class="mt-2 small">Đang tải danh mục sách...</p>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Lịch sử đặt mượn của user & Tra cứu -->
+    <!-- Cột phải: Đơn đặt của bạn đọc & Tra cứu ID -->
     <div class="col-lg-5">
-      <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-white py-3">
-          <h5 class="mb-0 fw-bold text-success"><i class="bi bi-card-checklist me-2"></i>Đơn Đặt Mượn Của Tôi</h5>
+      <!-- Đơn đặt mượn của bạn đọc -->
+      <div class="card mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-receipt me-2 text-primary"></i>Đơn đặt mượn của bạn đọc</span>
+          <button class="btn btn-link btn-sm p-0 text-decoration-none" onclick="loadUserReservations()">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
         </div>
-        <div class="card-body">
+        <div class="card-body p-3">
           <div id="reservationList">
-            <p class="text-muted text-center py-3">Chọn người dùng để xem lịch sử đặt mượn</p>
+            <p class="text-muted text-center py-3 small mb-0">Vui lòng chọn bạn đọc để xem lịch sử.</p>
           </div>
         </div>
       </div>
 
-      <!-- Tra cứu đơn theo ID -->
-      <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white py-3">
-          <h5 class="mb-0 fw-bold text-info"><i class="bi bi-search me-2"></i>Tra Cứu Theo Mã Đặt Mượn (ID)</h5>
+      <!-- Tra cứu đơn theo mã ID -->
+      <div class="card">
+        <div class="card-header py-3">
+          <i class="bi bi-search me-2 text-primary"></i>Tra cứu đơn theo mã (ID)
         </div>
-        <div class="card-body">
-          <div class="input-group mb-3">
-            <input type="text" id="lookupIdInput" class="form-control" placeholder="Nhập mã Reservation GUID...">
-            <button class="btn btn-info text-white" onclick="lookupReservation()"><i class="bi bi-search"></i> Tra cứu</button>
+        <div class="card-body p-3">
+          <div class="input-group input-group-sm mb-3">
+            <input type="text" id="lookupIdInput" class="form-control" placeholder="Dán mã GUID đơn đặt mượn...">
+            <button class="btn btn-primary" onclick="lookupReservation()">Tra cứu</button>
           </div>
           <div id="lookupResult"></div>
         </div>
@@ -96,120 +155,125 @@
 </div>
 
 <script>
-  let API_BASE_URL = 'http://localhost:5005';
+  // Sử dụng endpoint nội bộ của chính WebClient proxy sang API
+  const API_URL = '/api';
 
-  async function init() {
-    try {
-      const cfgRes = await fetch('/config');
-      if (cfgRes.ok) {
-        const cfg = await cfgRes.json();
-        if (cfg.apiBaseUrl) API_BASE_URL = cfg.apiBaseUrl;
-      }
-    } catch (e) {
-      console.log('Using default API url', e);
-    }
-
-    await loadUsers();
-    await loadBooks();
-    loadUserReservations();
-  }
-
-  function showAlert(msg, type = 'success') {
+  function showAlert(msg, type = 'info', autoHide = true) {
     const alertBox = document.getElementById('alertBox');
     alertBox.innerHTML = `
-      <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+      <div class="alert alert-${type} alert-dismissible fade show py-2 px-3 small" role="alert">
         ${msg}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <button type="button" class="btn-close py-2" data-bs-dismiss="alert"></button>
       </div>`;
-    setTimeout(() => { alertBox.innerHTML = ''; }, 6000);
+    if (autoHide) {
+      setTimeout(() => { alertBox.innerHTML = ''; }, 5000);
+    }
   }
 
   async function loadUsers() {
     try {
-      const res = await fetch(`${API_BASE_URL}/users`);
+      const res = await fetch(`${API_URL}/users`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const users = await res.json();
       const sel = document.getElementById('userSelect');
-      sel.innerHTML = users.map(u => `<option value="${u.id}">${u.fullName} (${u.email})</option>`).join('');
+      if (users.length === 0) {
+        sel.innerHTML = '<option value="">Không có người dùng</option>';
+        return;
+      }
+      sel.innerHTML = users.map(u => 
+        `<option value="${u.id}">${u.fullName} (${u.email})</option>`
+      ).join('');
     } catch (e) {
       console.error(e);
-      showAlert('Không thể kết nối tới Library API', 'danger');
+      document.getElementById('userSelect').innerHTML = '<option value="">Lỗi tải danh sách</option>';
+      showAlert('Không thể kết nối đến máy chủ API: ' + e.message, 'danger', false);
     }
   }
 
   async function loadBooks() {
     try {
-      const res = await fetch(`${API_BASE_URL}/books`);
+      const res = await fetch(`${API_URL}/books`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const books = await res.json();
       const list = document.getElementById('bookList');
+      const badge = document.getElementById('bookCountBadge');
+      badge.textContent = `${books.length} đầu sách`;
+
       if (books.length === 0) {
-        list.innerHTML = '<div class="col-12 text-center text-muted">Chưa có sách nào.</div>';
+        list.innerHTML = '<div class="text-center text-muted py-3 small">Thư viện hiện chưa có sách.</div>';
         return;
       }
 
-      list.innerHTML = books.map(b => `
-        <div class="col-12">
-          <div class="card card-book border p-3">
-            <div class="d-flex justify-content-between align-items-start">
-              <div>
-                <h5 class="fw-bold mb-1 text-dark">${b.title}</h5>
-                <div class="text-muted small mb-2"><i class="bi bi-pen"></i> Tác giả: ${b.author} | ISBN: ${b.isbn}</div>
-                <p class="small text-secondary mb-2">${b.description}</p>
-                <div>
-                  <span class="badge ${b.availableCopies > 0 ? 'bg-success' : 'bg-danger'}">
-                    <i class="bi bi-stack"></i> Khả dụng: ${b.availableCopies} / ${b.totalCopies}
+      list.innerHTML = books.map(b => {
+        const isOutOfStock = b.availableCopies <= 0;
+        return `
+          <div class="book-item">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div class="flex-grow-1">
+                <div class="fw-semibold text-dark">${b.title}</div>
+                <div class="text-muted small mb-1">
+                  <span>Tác giả: <strong>${b.author}</strong></span> | 
+                  <span>ISBN: ${b.isbn}</span>
+                </div>
+                <p class="text-secondary small mb-2">${b.description || ''}</p>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="badge ${isOutOfStock ? 'bg-danger' : 'bg-success'}">
+                    Còn ${b.availableCopies} / ${b.totalCopies} cuốn
                   </span>
                 </div>
               </div>
-              <div>
-                <button class="btn btn-primary btn-sm px-3" 
+              <div class="text-end">
+                <button class="btn btn-sm ${isOutOfStock ? 'btn-secondary' : 'btn-primary'}" 
                         onclick="reserveBook('${b.id}')"
-                        ${b.availableCopies <= 0 ? 'disabled' : ''}>
-                  <i class="bi bi-bookmark-plus"></i> Đặt Sách
+                        ${isOutOfStock ? 'disabled' : ''}>
+                  ${isOutOfStock ? 'Hết sách' : 'Đặt mượn'}
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     } catch (e) {
       console.error(e);
-      showAlert('Lỗi khi tải danh sách sách!', 'danger');
+      document.getElementById('bookList').innerHTML = 
+        '<div class="text-danger text-center py-3 small">Lỗi tải danh mục sách!</div>';
+      showAlert('Lỗi tải danh mục sách: ' + e.message, 'danger', false);
     }
   }
 
   async function reserveBook(bookId) {
     const userId = document.getElementById('userSelect').value;
     if (!userId) {
-      showAlert('Vui lòng chọn người dùng!', 'warning');
+      showAlert('Vui lòng chọn bạn đọc trước khi đặt mượn!', 'warning');
       return;
     }
 
     try {
-      showAlert('<div class="spinner-border spinner-border-sm me-2"></div>Đang gửi yêu cầu đặt mượn vào RabbitMQ...', 'info');
-      const res = await fetch(`${API_BASE_URL}/reservations`, {
+      showAlert('Đang gửi yêu cầu đặt mượn vào hàng đợi RabbitMQ...', 'info', false);
+      const res = await fetch(`${API_URL}/reservations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bookId, userId })
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ message: 'Lỗi không xác định' }));
         showAlert(err.message || 'Lỗi đặt sách', 'danger');
         return;
       }
 
       const data = await res.json();
-      showAlert(`<strong>Yêu cầu đã được gửi thành công!</strong> (Mã: <code>${data.id}</code>)<br>Worker đang bất đồng bộ xử lý trạng thái. Tự động kiểm tra sau 2 giây...`, 'success');
+      showAlert(`Yêu cầu đặt mượn đã gửi thành công (Mã: <code>${data.id}</code>). Reservation Worker đang bất đồng bộ duyệt đơn...`, 'success');
 
-      // Tự động kiểm tra kết quả sau 2s khi worker xử lý xong
+      // Tự động tải lại sau 1.5s khi worker xử lý xong
       setTimeout(async () => {
         await loadBooks();
         await loadUserReservations();
-      }, 2000);
+      }, 1500);
 
     } catch (e) {
       console.error(e);
-      showAlert('Không thể kết nối API', 'danger');
+      showAlert('Lỗi kết nối máy chủ khi gửi yêu cầu đặt mượn', 'danger');
     }
   }
 
@@ -218,31 +282,32 @@
     if (!userId) return;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${userId}/reservations`);
+      const res = await fetch(`${API_URL}/users/${userId}/reservations`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const items = await res.json();
       const container = document.getElementById('reservationList');
 
       if (items.length === 0) {
-        container.innerHTML = '<p class="text-center text-muted py-3">Người dùng này chưa có đơn đặt mượn nào.</p>';
+        container.innerHTML = '<p class="text-center text-muted py-3 small mb-0">Bạn đọc này chưa có yêu cầu mượn sách nào.</p>';
         return;
       }
 
       container.innerHTML = items.map(r => `
-        <div class="border rounded p-3 mb-2 bg-light">
+        <div class="border rounded p-2 mb-2 bg-white">
           <div class="d-flex justify-content-between align-items-center mb-1">
-            <strong class="text-primary">${r.bookTitle || 'Sách'}</strong>
-            <span class="badge badge-status-${r.status}">${r.status}</span>
+            <span class="fw-semibold small text-truncate" style="max-width: 220px;" title="${r.bookTitle}">${r.bookTitle || 'Sách'}</span>
+            <span class="badge-status status-${r.status}">${r.status}</span>
           </div>
-          <div class="small text-muted mb-1">Mã đơn: <code>${r.id}</code></div>
-          <div class="small text-secondary mb-2">${r.reasonMessage || 'Đang chờ worker kiểm tra số bản khả dụng...'}</div>
+          <div class="text-muted" style="font-size: 0.75rem;">Mã: <code>${r.id}</code></div>
+          <div class="text-secondary small my-1">${r.reasonMessage || 'Đang chờ xử lý trong hàng đợi...'}</div>
           
-          <div class="d-flex gap-2">
+          <div class="d-flex gap-2 mt-2">
             ${r.status === 'Reserved' ? `
-              <button class="btn btn-outline-success btn-sm py-0" onclick="updateStatus('${r.id}', 3)">
-                <i class="bi bi-box-arrow-down"></i> Nhận sách (Borrowed)
+              <button class="btn btn-outline-success btn-sm py-0" style="font-size: 0.75rem;" onclick="updateStatus('${r.id}', 3)">
+                <i class="bi bi-box-arrow-in-down"></i> Nhận sách (Borrowed)
               </button>` : ''}
             ${r.status === 'Borrowed' ? `
-              <button class="btn btn-outline-secondary btn-sm py-0" onclick="updateStatus('${r.id}', 4)">
+              <button class="btn btn-outline-secondary btn-sm py-0" style="font-size: 0.75rem;" onclick="updateStatus('${r.id}', 4)">
                 <i class="bi bi-arrow-return-left"></i> Trả sách (Returned)
               </button>` : ''}
           </div>
@@ -255,21 +320,21 @@
 
   async function updateStatus(reservationId, newStatus) {
     try {
-      const res = await fetch(`${API_BASE_URL}/reservations/${reservationId}/status`, {
+      const res = await fetch(`${API_URL}/reservations/${reservationId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newStatus })
       });
       if (res.ok) {
-        showAlert('Cập nhật trạng thái thành công!', 'success');
+        showAlert('Cập nhật trạng thái sách thành công!', 'success');
         await loadBooks();
         await loadUserReservations();
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ message: 'Lỗi cập nhật' }));
         showAlert(err.message || 'Lỗi cập nhật', 'danger');
       }
     } catch (e) {
-      showAlert('Lỗi kết nối API', 'danger');
+      showAlert('Lỗi kết nối khi cập nhật trạng thái', 'danger');
     }
   }
 
@@ -277,27 +342,33 @@
     const id = document.getElementById('lookupIdInput').value.trim();
     const resultBox = document.getElementById('lookupResult');
     if (!id) {
-      resultBox.innerHTML = '<div class="alert alert-warning py-2">Vui lòng nhập ID hợp lệ!</div>';
+      resultBox.innerHTML = '<div class="alert alert-warning py-1 px-2 small">Vui lòng nhập mã GUID hợp lệ!</div>';
       return;
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/reservations/${id}`);
+      const res = await fetch(`${API_URL}/reservations/${id}`);
       if (!res.ok) {
-        resultBox.innerHTML = '<div class="alert alert-danger py-2">Không tìm thấy yêu cầu đặt mượn với ID này.</div>';
+        resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 small">Không tìm thấy yêu cầu đặt mượn với mã này.</div>';
         return;
       }
       const data = await res.json();
       resultBox.innerHTML = `
-        <div class="alert alert-light border py-2">
-          <div class="fw-bold mb-1">${data.bookTitle}</div>
-          <div class="small">Người đặt: <strong>${data.userName}</strong></div>
-          <div class="small mb-1">Trạng thái: <span class="badge badge-status-${data.status}">${data.status}</span></div>
-          <div class="small text-muted">${data.reasonMessage || 'Chưa có thông báo'}</div>
+        <div class="border rounded p-2 bg-light small">
+          <div class="fw-semibold text-dark">${data.bookTitle}</div>
+          <div class="text-muted">Bạn đọc: <strong>${data.userName}</strong></div>
+          <div class="my-1">Trạng thái: <span class="badge-status status-${data.status}">${data.status}</span></div>
+          <div class="text-secondary">${data.reasonMessage || 'Chưa có thông báo'}</div>
         </div>`;
     } catch (e) {
-      resultBox.innerHTML = '<div class="alert alert-danger py-2">Lỗi tra cứu!</div>';
+      resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 small">Lỗi khi tra cứu đơn!</div>';
     }
+  }
+
+  async function init() {
+    await loadUsers();
+    await loadBooks();
+    await loadUserReservations();
   }
 
   window.onload = init;
