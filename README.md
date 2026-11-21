@@ -166,7 +166,18 @@ Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ b�
 
 ### 🪟 Hướng Dẫn Dành Cho Windows
 
-#### Cách 1: Chạy tự động trọn gói bằng Docker Desktop (Khuyến nghị số 1)
+### 🪟 Hướng Dẫn Dành Cho Windows
+
+#### ⚡ Cách 1: Khởi Chạy Nhanh 1-Click Bằng File `.bat` (Siêu tiện lợi & Nhanh nhất)
+1. Đảm bảo **Docker Desktop for Windows** đang được mở và chạy (biểu tượng cá voi màu xanh).
+2. Click đúp chuột vào file:
+   - 🚀 **`start-windows.bat`**: Script sẽ tự động kiểm tra Docker, build toàn bộ 5 dịch vụ, khởi chạy hệ thống ngầm và **tự động mở trình duyệt Web Client** (`http://localhost:8088`).
+   - 🛑 **`stop-windows.bat`**: Dừng nhanh toàn bộ hệ thống và giải phóng tài nguyên RAM/CPU.
+   - 💻 **`run-console-windows.bat`**: Mở nhanh giao diện Console CLI tương tác bằng dòng lệnh.
+
+---
+
+#### Cách 2: Khởi chạy bằng lệnh Docker Compose (PowerShell / Command Prompt)
 1. **Cài đặt trước:** Đảm bảo máy tính đã cài đặt và đang chạy **Docker Desktop for Windows**.
 2. **Khởi chạy:**
    - Mở **PowerShell** hoặc **Command Prompt (CMD)**, di chuyển vào thư mục dự án:
