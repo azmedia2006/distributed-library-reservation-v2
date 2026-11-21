@@ -39,8 +39,8 @@ Trong các hệ thống quản lý mượn sách truyền thống, các giao d�
 1. **Tiếp nhận tức thì (Non-blocking):** Client gửi yêu cầu -> API lưu trạng thái sơ bộ `Pending` -> Trả về `202 Accepted` ngay cho người dùng mà không cần chờ khóa dữ liệu.
 2. **Xếp hàng tin cậy qua Message Broker:** Đẩy thông điệp vào RabbitMQ (sử dụng Direct Exchange).
 3. **Background Worker Service:** Tiêu thụ thông điệp theo thứ tự, kiểm tra số lượng bản khả dụng trong Database:
-   - ✅ Nếu `AvailableCopies > 0`: Trừ 1 bản, phê duyệt đơn `Reserved`.
-   - ❌ Nếu `AvailableCopies == 0`: Từ chối đơn `Rejected` kèm thông báo lý do rõ ràng.
+   - Nếu `AvailableCopies > 0`: Trừ 1 bản, phê duyệt đơn `Reserved`.
+   - Nếu `AvailableCopies == 0`: Từ chối đơn `Rejected` kèm thông báo lý do rõ ràng.
 4. **Vòng đời mượn - trả:** Hỗ trợ chuyển trạng thái sang `Borrowed` khi đến nhận sách và tự động hoàn lại (+1) số bản khả dụng khi trả sách `Returned`.
 
 ---
@@ -50,8 +50,8 @@ Trong các hệ thống quản lý mượn sách truyền thống, các giao d�
 ```mermaid
 graph TD
     subgraph "Clients Layer"
-        WebClient["🌐 Web Client (SPA)<br/>Port: 8088"]
-        ConsoleClient["💻 Console Client (CLI)<br/>Menu 8 chức năng"]
+        WebClient["Web Client (SPA)<br/>Port: 8088"]
+        ConsoleClient["Console Client (CLI)<br/>Menu 8 chức năng"]
     end
 
     subgraph "API Gateway / Server Layer"
@@ -59,13 +59,13 @@ graph TD
     end
 
     subgraph "Messaging & Background Processing"
-        RabbitMQ["🐰 RabbitMQ Message Broker<br/>Port: 5672 / 15672 (UI)<br/>Exchange: library.exchange"]
-        DLQ["☠️ Dead Letter Queue<br/>library.reservations.dlq"]
-        Worker["⚙️ Reservation Worker Service<br/>Background Consumer<br/>Idempotent & Resilient"]
+        RabbitMQ["RabbitMQ Message Broker<br/>Port: 5672 / 15672 (UI)<br/>Exchange: library.exchange"]
+        DLQ["Dead Letter Queue<br/>library.reservations.dlq"]
+        Worker["Reservation Worker Service<br/>Background Consumer<br/>Idempotent & Resilient"]
     end
 
     subgraph "Persistence Storage Layer"
-        Postgres[("🐘 PostgreSQL 16<br/>Database: library_db<br/>Port: 5432")]
+        Postgres[("PostgreSQL 16<br/>Database: library_db<br/>Port: 5432")]
     end
 
     WebClient -->|HTTP / JSON| API
@@ -84,12 +84,12 @@ graph TD
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as 👤 Bạn Đọc
-    participant Web as 🌐 Web Client (Port 8088)
+    actor User as Bạn Đọc
+    participant Web as Web Client (Port 8088)
     participant API as ⚡ Library API (Port 5005)
-    participant RMQ as 🐰 RabbitMQ Exchange
-    participant Worker as ⚙️ Reservation Worker
-    participant DB as 🐘 PostgreSQL (Port 5432)
+    participant RMQ as RabbitMQ Exchange
+    participant Worker as Reservation Worker
+    participant DB as PostgreSQL (Port 5432)
 
     User->>Web: Nhấn "Đặt mượn sách"
     Web->>API: POST /reservations { bookId, userId }
@@ -126,14 +126,14 @@ Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ b�
 
 | Kỹ thuật | Chi tiết áp dụng trong dự án |
 | :--- | :--- |
-| **🎯 .NET 10 & Minimal API** | Tối ưu hóa hiệu năng, giảm overhead, code gọn gàng, tích hợp Swagger UI và CORS. |
-| **🐰 Message Queue & Direct Exchange** | Mô hình bất đồng bộ với hàng đợi RabbitMQ, tách rời hoàn toàn quá trình tiếp nhận và xử lý mượn sách. |
-| **☠️ Dead Letter Queue (DLQ)** | Cấu hình DLX `library.dlx.exchange` và queue `library.reservations.dlq` để cách ly và xử lý tin nhắn lỗi. |
-| **🆔 Correlation ID Tracking** | Gắn mã UUID định danh xuyên suốt từ Client -> API -> RabbitMQ -> Worker -> Logs hệ thống. |
-| **🛡️ Idempotent Consumer** | Worker kiểm tra trạng thái trước khi trừ kho để loại trừ nguy cơ xử lý trùng thông điệp (At-least-once delivery). |
-| **🩺 Health Check Endpoint** | Cung cấp endpoint `/health` theo dõi tình trạng sống còn của hệ thống. |
-| **🔄 Internal Reverse Proxy** | Web Client tích hợp sẵn proxy nội bộ giúp loại bỏ 100% lỗi CORS và lỗi lệch cổng khi chạy trên máy chủ/môi trường khác nhau. |
-| **🧪 Automated Testing** | Bộ kiểm thử tự động với xUnit và EntityFramework InMemory bao phủ đầy đủ các case nghiệp vụ. |
+| **.NET 10 & Minimal API** | Tối ưu hóa hiệu năng, giảm overhead, code gọn gàng, tích hợp Swagger UI và CORS. |
+| **Message Queue & Direct Exchange** | Mô hình bất đồng bộ với hàng đợi RabbitMQ, tách rời hoàn toàn quá trình tiếp nhận và xử lý mượn sách. |
+| **Dead Letter Queue (DLQ)** | Cấu hình DLX `library.dlx.exchange` và queue `library.reservations.dlq` để cách ly và xử lý tin nhắn lỗi. |
+| **Correlation ID Tracking** | Gắn mã UUID định danh xuyên suốt từ Client -> API -> RabbitMQ -> Worker -> Logs hệ thống. |
+| **Idempotent Consumer** | Worker kiểm tra trạng thái trước khi trừ kho để loại trừ nguy cơ xử lý trùng thông điệp (At-least-once delivery). |
+| **Health Check Endpoint** | Cung cấp endpoint `/health` theo dõi tình trạng sống còn của hệ thống. |
+| **Internal Reverse Proxy** | Web Client tích hợp sẵn proxy nội bộ giúp loại bỏ 100% lỗi CORS và lỗi lệch cổng khi chạy trên máy chủ/môi trường khác nhau. |
+| **Automated Testing** | Bộ kiểm thử tự động với xUnit và EntityFramework InMemory bao phủ đầy đủ các case nghiệp vụ. |
 
 ---
 
@@ -299,10 +299,10 @@ Dự án được viết sẵn 4 test case chuyên sâu kiểm tra toàn diện 
 dotnet test
 ```
 **Kết quả kiểm thử:**
-- ✅ `ProcessReservation_WhenBookAvailable_ShouldReserveAndDecreaseCopies`
-- ✅ `ProcessReservation_WhenBookOutOfStock_ShouldRejectReservation`
-- ✅ `UpdateStatus_ToReturned_ShouldIncreaseAvailableCopies`
-- ✅ `ProcessReservation_Idempotency_ShouldNotDeductTwice`
+- `ProcessReservation_WhenBookAvailable_ShouldReserveAndDecreaseCopies`
+- `ProcessReservation_WhenBookOutOfStock_ShouldRejectReservation`
+- `UpdateStatus_ToReturned_ShouldIncreaseAvailableCopies`
+- `ProcessReservation_Idempotency_ShouldNotDeductTwice`
 
 ### 8.2. Kịch bản minh họa khi thuyết trình (Demo Flow)
 1. **Bước 1:** Mở Web Client tại [http://localhost:8088](http://localhost:8088) (hoặc mở Console Client).
