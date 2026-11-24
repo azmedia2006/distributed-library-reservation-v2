@@ -21,6 +21,7 @@ public class LibraryDbContext : DbContext
             entity.Property(b => b.Title).IsRequired().HasMaxLength(250);
             entity.Property(b => b.Author).IsRequired().HasMaxLength(150);
             entity.Property(b => b.ISBN).IsRequired().HasMaxLength(50);
+            entity.HasIndex(b => b.ISBN);
         });
 
         modelBuilder.Entity<User>(entity =>
@@ -28,11 +29,17 @@ public class LibraryDbContext : DbContext
             entity.HasKey(u => u.Id);
             entity.Property(u => u.FullName).IsRequired().HasMaxLength(150);
             entity.Property(u => u.Email).IsRequired().HasMaxLength(150);
+            entity.Property(u => u.PhoneNumber).HasMaxLength(30);
         });
 
         modelBuilder.Entity<Reservation>(entity =>
         {
             entity.HasKey(r => r.Id);
+            entity.Property(r => r.CorrelationId).HasMaxLength(100);
+            entity.Property(r => r.ReasonMessage).HasMaxLength(500);
+            entity.HasIndex(r => new { r.UserId, r.Status });
+            entity.HasIndex(r => new { r.Status, r.CreatedAt });
+
             entity.HasOne(r => r.Book)
                   .WithMany()
                   .HasForeignKey(r => r.BookId)
@@ -49,23 +56,39 @@ public class LibraryDbContext : DbContext
     {
         await context.Database.EnsureCreatedAsync();
 
+        if (context.Database.IsRelational())
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                @"ALTER TABLE ""Reservations"" ADD COLUMN IF NOT EXISTS ""CorrelationId"" character varying(100);");
+        }
+
         if (!await context.Users.AnyAsync())
         {
-            var user1 = new User
+            var users = new List<User>
             {
-                Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                FullName = "Nguyễn Văn An",
-                Email = "an.nguyen@example.com",
-                PhoneNumber = "0901234567"
+                new User
+                {
+                    Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                    FullName = "Nguyễn Văn An",
+                    Email = "an.nguyen@library.edu.vn",
+                    PhoneNumber = "0901234567"
+                },
+                new User
+                {
+                    Id = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                    FullName = "Trần Thị Bình",
+                    Email = "binh.tran@library.edu.vn",
+                    PhoneNumber = "0912345678"
+                },
+                new User
+                {
+                    Id = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                    FullName = "Lê Hoàng Cường",
+                    Email = "cuong.le@library.edu.vn",
+                    PhoneNumber = "0987654321"
+                }
             };
-            var user2 = new User
-            {
-                Id = Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                FullName = "Trần Thị Bình",
-                Email = "binh.tran@example.com",
-                PhoneNumber = "0912345678"
-            };
-            await context.Users.AddRangeAsync(user1, user2);
+            await context.Users.AddRangeAsync(users);
         }
 
         if (!await context.Books.AnyAsync())
@@ -78,7 +101,7 @@ public class LibraryDbContext : DbContext
                     Title = "Designing Data-Intensive Applications",
                     Author = "Martin Kleppmann",
                     ISBN = "978-1449373320",
-                    Description = "The big ideas behind reliable, scalable, and maintainable systems.",
+                    Description = "Kiến trúc cốt lõi của các hệ thống phân tán tin cậy, mở rộng cao và dễ bảo trì.",
                     TotalCopies = 3,
                     AvailableCopies = 3
                 },
@@ -88,7 +111,7 @@ public class LibraryDbContext : DbContext
                     Title = "Distributed Systems: Principles and Paradigms",
                     Author = "Andrew S. Tanenbaum, Maarten van Steen",
                     ISBN = "978-1543057386",
-                    Description = "Comprehensive introduction to concepts and principles of distributed systems.",
+                    Description = "Giáo trình nền tảng về nguyên lý, đồng thuận phân tán, giao tiếp tiến trình và chịu lỗi.",
                     TotalCopies = 2,
                     AvailableCopies = 2
                 },
@@ -98,7 +121,7 @@ public class LibraryDbContext : DbContext
                     Title = "Building Microservices: Designing Fine-Grained Systems",
                     Author = "Sam Newman",
                     ISBN = "978-1492034025",
-                    Description = "Key concepts in modeling, integrating, testing, deploying, and monitoring microservices.",
+                    Description = "Thiết kế, tích hợp bất đồng bộ qua Message Broker và triển khai hệ thống vi dịch vụ (1 bản để kiểm thử chống Overbooking).",
                     TotalCopies = 1,
                     AvailableCopies = 1
                 },
@@ -108,9 +131,19 @@ public class LibraryDbContext : DbContext
                     Title = "Clean Architecture: A Craftsman's Guide",
                     Author = "Robert C. Martin",
                     ISBN = "978-0134494166",
-                    Description = "A timeless guide on software structure and design.",
+                    Description = "Nguyên tắc thiết kế kiến trúc phần mềm phân tầng độc lập hạ tầng.",
                     TotalCopies = 4,
                     AvailableCopies = 4
+                },
+                new Book
+                {
+                    Id = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+                    Title = "Enterprise Integration Patterns",
+                    Author = "Gregor Hohpe, Bobby Woolf",
+                    ISBN = "978-0321200686",
+                    Description = "Các mẫu tích hợp thông điệp chuẩn: Message Queue, Correlation Identifier, Dead Letter Channel và Idempotent Receiver.",
+                    TotalCopies = 2,
+                    AvailableCopies = 2
                 }
             };
             await context.Books.AddRangeAsync(books);

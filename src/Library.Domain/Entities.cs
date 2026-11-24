@@ -39,6 +39,7 @@ public class Reservation
     public User? User { get; set; }
     public ReservationStatus Status { get; set; } = ReservationStatus.Pending;
     public string? ReasonMessage { get; set; }
+    public string? CorrelationId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ProcessedAt { get; set; }
     public DateTime? BorrowedAt { get; set; }
