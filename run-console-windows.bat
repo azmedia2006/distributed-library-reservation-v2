@@ -8,11 +8,21 @@ echo ===========================================================================
 echo.
 
 where dotnet >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo [LỖI] Chưa cài đặt .NET SDK trên máy tính!
+if %ERRORLEVEL% equ 0 (
+    dotnet run --project src\Library.ConsoleClient
     pause
-    exit /b 1
+    exit /b 0
 )
 
-dotnet run --project src\Library.ConsoleClient
+where docker >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    echo [THÔNG BÁO] Máy chưa cài .NET SDK — tự động khởi chạy Console Client qua Docker Container...
+    echo.
+    docker compose --profile cli run --rm console-client
+    pause
+    exit /b 0
+)
+
+echo [LỖI] Không tìm thấy .NET 10 SDK hoặc Docker Desktop trên máy tính!
 pause
+exit /b 1

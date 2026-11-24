@@ -94,6 +94,22 @@ services:
     networks:
       - library_network
 
+  console-client:
+    build:
+      context: .
+      dockerfile: src/Library.ConsoleClient/Dockerfile
+    container_name: library_console_client
+    profiles:
+      - cli
+    stdin_open: true
+    tty: true
+    environment:
+      API_BASE_URL: "http://library-api:5000"
+    depends_on:
+      - library-api
+    networks:
+      - library_network
+
 networks:
   library_network:
     driver: bridge

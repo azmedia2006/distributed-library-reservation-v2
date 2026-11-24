@@ -31,7 +31,7 @@
 
 > [!IMPORTANT]
 > **Học phần:** Phát triển ứng dụng phân tán — **Đề tài số 20**  
-> Toàn bộ 5 thành phần (`PostgreSQL`, `RabbitMQ`, `Library.API`, `Library.Worker`, `Library.WebClient`) kèm ứng dụng `Library.ConsoleClient` được đóng gói độc lập và giao tiếp hoàn toàn qua mạng nội bộ Docker.
+> Toàn bộ 6 thành phần (`PostgreSQL`, `RabbitMQ`, `Library.API`, `Library.Worker`, `Library.WebClient`, `Library.ConsoleClient`) đều có `Dockerfile` độc lập, được khai báo đầy đủ trong `docker-compose.yml` và giao tiếp hoàn toàn qua mạng nội bộ `library_network`.
 
 ---
 
@@ -95,14 +95,16 @@ flowchart LR
     class DB db;
 ```
 
-### Quy hoạch cổng dịch vụ
+### Quy hoạch dịch vụ & cổng kết nối
 
-| Dịch vụ | Container Name | Cổng Host | Cổng Nội Bộ | Vai trò & Thông tin truy cập |
+| Dịch vụ | Container Name | Cổng Host | Cổng Nội Bộ | Vai trò & Địa chỉ truy cập |
 | :--- | :--- | :---: | :---: | :--- |
-| **Web Dashboard** | `library_web_client` | `8088` | `8080` | Giao diện Bạn đọc, Điều phối Thủ thư & Reverse Proxy (`/api/*`) |
-| **Library API** | `library_api` | `5005` | `5000` | RESTful Minimal API, Swagger UI (`/swagger`), Health (`/health`) |
-| **Reservation Worker** | `library_reservation_worker` | — | — | Background Consumer xử lý hàng đợi, chống Overbooking |
-| **RabbitMQ** | `library_rabbitmq` | `5672`, `15672` | `5672`, `15672` | AMQP Broker & Management Dashboard (`guest` / `guest`) |
+| **Web Dashboard** | `library_web_client` | `8088` | `8080` | Giao diện Bạn đọc, Quầy Thủ thư & Reverse Proxy (`http://localhost:8088`) |
+| **Console Client CLI** | `library_console_client` | Interactive CLI | — | Ứng dụng dòng lệnh 9 chức năng & Burst Test (`docker compose --profile cli run --rm console-client`) |
+| **Library API** | `library_api` | `5005` | `5000` | Minimal API, Swagger (`http://localhost:5005/swagger`), Health (`http://localhost:5005/health`) |
+| **Reservation Worker** | `library_reservation_worker` | Background | — | Consumer ngầm xử lý hàng đợi, Retry x3, DLQ & chống Overbooking |
+| **RabbitMQ Broker** | `library_rabbitmq` | `5672` | `5672` | Giao thức AMQP 0-9-1 (`library.exchange` & `library.reservations.dlq`) |
+| **RabbitMQ Dashboard** | `library_rabbitmq` | `15672` | `15672` | Giao diện quản trị hàng đợi (`http://localhost:15672` — `guest` / `guest`) |
 | **PostgreSQL 16** | `library_postgres` | `5432` | `5432` | Cơ sở dữ liệu `library_db` (`postgres` / `postgrespassword`) |
 
 ---
