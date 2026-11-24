@@ -12,7 +12,12 @@ if (!apiUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
     apiUrl = "http://" + apiUrl;
 }
 
-using var httpClient = new HttpClient
+using var handler = new SocketsHttpHandler
+{
+    PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+};
+
+using var httpClient = new HttpClient(handler)
 {
     BaseAddress = new Uri(apiUrl),
     Timeout = TimeSpan.FromSeconds(15)
@@ -75,6 +80,7 @@ static async Task<IResult> ProxyBodyAsync(HttpClient client, HttpContext ctx, Ht
     }
 }
 
+app.MapGet("/health", () => Results.Ok(new { service = "Library.WebClient", status = "Healthy", timestamp = DateTime.UtcNow }));
 app.MapGet("/api/health", (HttpContext ctx) => ProxyGetAsync(httpClient, ctx, "/health"));
 app.MapGet("/api/stats", (HttpContext ctx) => ProxyGetAsync(httpClient, ctx, "/stats"));
 
