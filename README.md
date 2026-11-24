@@ -208,6 +208,16 @@ erDiagram
         timestamptz BorrowedAt
         timestamptz ReturnedAt
     }
+
+    AUDIT_LOGS {
+        uuid Id PK
+        uuid ReservationId
+        varchar CorrelationId
+        varchar ServiceName
+        varchar EventType
+        varchar Message
+        timestamptz CreatedAt
+    }
 ```
 
 Các chỉ mục (*Indexes*) tối ưu truy vấn đã được khai báo trong `LibraryDbContext`:
@@ -268,11 +278,13 @@ Khi khởi chạy lần đầu, hệ thống tự động tạo schema và nạp
 
 ![Giao diện Web Thư viện Đại học](./docs/assets/web-preview.svg)
 
-Giao diện Web được tổ chức tách biệt rõ mã nguồn HTML (`index.html`), bảng kiểu (`css/styles.css`) và logic tương tác (`js/app.js`) gồm 4 phân hệ:
-- **Danh mục sách:** Tìm kiếm tức thì theo tên sách/tác giả/ISBN, lọc sách còn bản trên kệ, xem ngăn trượt chi tiết tồn kho, đặt mượn đơn lẻ, gửi nhanh 3 phiếu đồng thời và theo dõi danh sách phiếu cá nhân tự động cập nhật khi Worker duyệt xong.
-- **Quản lý mượn trả:** Bảng điều phối tập trung dành cho thủ thư lọc theo từng trạng thái (`Chờ duyệt`, `Đã giữ sách`, `Đang mượn`, `Đã trả`, `Từ chối`), tìm theo `Correlation ID`, bấm giao sách hoặc nhận trả 1-click.
+Giao diện Web được tổ chức tách biệt rõ mã nguồn HTML (`index.html`), bảng kiểu (`css/styles.css`) và logic tương tác (`js/app.js`) gồm **5 phân hệ** kết hợp **Xác thực Thủ thư (Bearer Token)**:
+- **Danh mục sách:** Tìm kiếm tức thì theo tên sách/tác giả/ISBN, lọc sách còn bản trên kệ, xem ngăn trượt chi tiết tồn kho (kèm danh sách người đang giữ/mượn cuốn đó), đặt mượn đơn lẻ, gửi nhanh 3 phiếu đồng thời và lọc sách của bạn đọc theo *Tất cả*, *Đang đặt / mượn*, *Đã giữ*, *Đang mượn*.
+- **Quản lý mượn trả:** Bảng điều phối tập trung đủ 5 trạng thái (`Pending`, `Reserved`, `Borrowed`, `Returned`, `Rejected`), tìm theo `Correlation ID`, bấm giao sách hoặc nhận trả 1-click.
+- **Hàng đợi & Nhật ký *(Bám sát `HUONG-DAN-CHUNG.md`)*:** Theo dõi trực tiếp số bản tin đang chờ trên `library.reservations.queue`, số tiến trình Worker đang lắng nghe và bộ đếm `library.reservations.dlq`; tích hợp **3 nút thực nghiệm trực tiếp** (*Đặt đồng thời 5 phiếu*, *Phát lặp kiểm chứng Idempotent Consumer*, *Bắn gói tin lỗi vào DLQ*) cùng bảng nhật ký sự kiện xuyên dịch vụ (`AuditLogs`).
 - **Bạn đọc:** Quản lý danh sách thẻ độc giả, đăng ký thẻ mới và chuyển đổi nhanh tài khoản thao tác.
-- **Tra cứu mã phiếu:** Kiểm tra chi tiết 4 chặng thời gian xử lý của một mã GUID bất kỳ kèm khung xem dữ liệu JSON gốc từ máy chủ.
+- **Tra cứu mã phiếu:** Kiểm tra chi tiết 4 chặng thời gian xử lý, lịch sử `auditTrail` liên dịch vụ của riêng phiếu đó và khung xem dữ liệu JSON gốc.
+- **Xác thực Thủ thư (`thuthu` / `123456`):** Đăng nhập trên thanh điều hướng nhận Bearer Token ký HMAC-SHA256 cho các thao tác quản trị kho sách.
 
 ### 6.2. Ứng dụng dòng lệnh `Library.ConsoleClient`
 
@@ -364,8 +376,14 @@ Hệ thống cung cấp đầy đủ **5 API bắt buộc** trong đề bài s�
 | **Bạn đọc** | `GET` | `/users` | Danh sách thẻ bạn đọc trong thư viện | `200` |
 | **Bạn đọc** | `POST` | `/users` | Đăng ký thẻ bạn đọc mới (kiểm tra trùng địa chỉ Email) | `201`, `400` |
 | **Bạn đọc** | `GET` | `/users/{userId}/reservations` | Danh sách sách đang đặt/mượn (`?activeOnly=true`) hoặc lịch sử bạn đọc | `200`, `404` |
+| **Xác thực** | `POST` | `/auth/login` | Đăng nhập Thủ thư (`thuthu` / `123456`), cấp Bearer Token ký HMAC-SHA256 | `200`, `401` |
+| **Xác thực** | `GET` | `/auth/me` | Kiểm tra hiệu lực phiên xác thực của Thủ thư | `200`, `401` |
+| **Giám sát** | `GET` | `/queues` | Số lượng tin nhắn thực tế trên hàng đợi chính và `Dead Letter Queue` | `200` |
+| **Giám sát** | `GET` | `/audit-logs` | Truy vấn nhật ký luồng sự kiện xuyên dịch vụ (`Library.API` & `Library.Worker`) | `200` |
 | **Giám sát** | `GET` | `/stats` | Số liệu thống kê tổng hợp sách, tồn kho và phân bổ trạng thái phiếu | `200` |
 | **Giám sát** | `GET` | `/health` | Trạng thái kết nối trực tiếp tới PostgreSQL 16 và RabbitMQ Broker | `200` |
+| **Kiểm chứng** | `POST` | `/diagnostics/republish/{id}` | Phát lặp lại bản tin đặt mượn để minh họa **Idempotent Consumer** | `200`, `404` |
+| **Kiểm chứng** | `POST` | `/diagnostics/poison-message` | Đẩy gói tin lỗi JSON để minh họa định tuyến vào **Dead Letter Queue** | `200` |
 
 <details>
 <summary><b>Xem ví dụ lệnh gọi API mẫu (curl & JSON Response)</b></summary>

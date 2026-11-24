@@ -1,11 +1,11 @@
 const API_BASE = '/api';
 
 const STATUS_LABELS = {
-  Pending: 'Chờ duyệt',
-  Reserved: 'Đã giữ sách',
-  Borrowed: 'Đang mượn',
-  Returned: 'Đã trả',
-  Rejected: 'Từ chối'
+  Pending: 'Pending · Chờ duyệt',
+  Reserved: 'Reserved · Đã giữ sách',
+  Borrowed: 'Borrowed · Đang mượn',
+  Returned: 'Returned · Đã trả',
+  Rejected: 'Rejected · Từ chối'
 };
 
 const PAPER_COVERS = [
@@ -18,12 +18,17 @@ const PAPER_COVERS = [
 
 const state = {
   bookAvailOnly: false,
-  userActiveOnly: false,
+  userLoanMode: 'all',
   manageStatus: '',
+  auditService: '',
+  staffToken: localStorage.getItem('lib_staff_token') || '',
+  staffName: localStorage.getItem('lib_staff_name') || '',
   members: [],
   books: [],
+  userLoans: [],
   bookTimer: null,
   manageTimer: null,
+  auditTimer: null,
   pollTimer: null
 };
 
@@ -68,6 +73,14 @@ function statusText(status) {
   return STATUS_LABELS[status] || status;
 }
 
+function authHeaders(extra = {}) {
+  const h = { ...extra };
+  if (state.staffToken) {
+    h['Authorization'] = `Bearer ${state.staffToken}`;
+  }
+  return h;
+}
+
 function notify(html, isError = false) {
   const box = document.getElementById('toastBox');
   const el = document.createElement('div');
@@ -78,7 +91,7 @@ function notify(html, isError = false) {
     el.style.opacity = '0';
     el.style.transition = 'opacity 0.2s';
     setTimeout(() => el.remove(), 220);
-  }, 4200);
+  }, 4300);
 }
 
 function copyId(value, label = 'Mã') {
@@ -95,6 +108,7 @@ const app = {
     document.getElementById(`tab-${tab}`)?.classList.add('active');
 
     if (tab === 'manage') this.loadAllOrders();
+    if (tab === 'queues') this.loadQueuesAndLogs();
     if (tab === 'members') this.renderMembers();
   },
 
@@ -108,11 +122,61 @@ const app = {
     document.querySelectorAll('.sheet').forEach(s => s.classList.remove('open'));
   },
 
+  renderStaffPill() {
+    const btn = document.getElementById('staffBtn');
+    if (state.staffToken) {
+      btn.classList.add('logged-in');
+      btn.textContent = `Thủ thư: ${state.staffName || 'Đã xác thực'} (Thoát)`;
+    } else {
+      btn.classList.remove('logged-in');
+      btn.textContent = 'Thủ thư: Đăng nhập';
+    }
+  },
+
+  handleStaffClick() {
+    if (state.staffToken) {
+      state.staffToken = '';
+      state.staffName = '';
+      localStorage.removeItem('lib_staff_token');
+      localStorage.removeItem('lib_staff_name');
+      this.renderStaffPill();
+      notify('Đã đăng xuất phiên Thủ thư.');
+    } else {
+      this.openSheet('staffSheet');
+    }
+  },
+
+  async submitStaffLogin(ev) {
+    ev.preventDefault();
+    const username = document.getElementById('fStaffUser').value.trim();
+    const password = document.getElementById('fStaffPass').value;
+
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      notify(esc(data.message || 'Đăng nhập thất bại'), true);
+      return;
+    }
+
+    state.staffToken = data.token;
+    state.staffName = data.username;
+    localStorage.setItem('lib_staff_token', data.token);
+    localStorage.setItem('lib_staff_name', data.username);
+    this.renderStaffPill();
+    this.closeSheets();
+    notify(`Đã xác thực quyền <strong>${esc(data.displayName)}</strong> (Bearer Token).`);
+  },
+
   async loadSummaryAndHealth() {
     try {
-      const [healthRes, statsRes] = await Promise.all([
+      const [healthRes, statsRes, qRes] = await Promise.all([
         fetch(`${API_BASE}/health`),
-        fetch(`${API_BASE}/stats`)
+        fetch(`${API_BASE}/stats`),
+        fetch(`${API_BASE}/queues`)
       ]);
 
       if (healthRes.ok) {
@@ -134,13 +198,22 @@ const app = {
 
         const qWrap = document.getElementById('sumQueueWrap');
         if (s.pendingReservations > 0) {
-          qWrap.innerHTML = `<span class="conn-dot busy"></span>Hàng đợi đang xử lý: <strong>${s.pendingReservations}</strong>`;
+          qWrap.innerHTML = `<span class="conn-dot busy"></span>Chờ duyệt: <strong>${s.pendingReservations}</strong>`;
         } else {
-          qWrap.innerHTML = `Hàng đợi chờ duyệt: <strong>0</strong>`;
+          qWrap.innerHTML = `Chờ duyệt: <strong>0</strong>`;
         }
 
         document.getElementById('badgeOrders').textContent = s.totalReservations;
         document.getElementById('badgeMembers').textContent = s.totalUsers;
+      }
+
+      if (qRes.ok) {
+        const q = await qRes.json();
+        document.getElementById('badgeDlq').textContent = q.deadLetterMessages ?? 0;
+        document.getElementById('qMainCount').textContent = `${q.mainQueueMessages ?? 0} bản tin chờ`;
+        document.getElementById('qConsumerCount').textContent =
+          `Số tiến trình Worker đang lắng nghe: ${q.mainQueueConsumers ?? 0}`;
+        document.getElementById('qDlqCount').textContent = `${q.deadLetterMessages ?? 0} bản tin lỗi`;
       }
     } catch (err) {
       console.error(err);
@@ -273,8 +346,8 @@ const app = {
         const cover = PAPER_COVERS[i % PAPER_COVERS.length];
         const stockCls = out ? 'empty' : (low ? 'low' : '');
         const stockLabel = out
-          ? `Tạm hết bản khả dụng (0/${b.totalCopies})`
-          : `Còn ${b.availableCopies}/${b.totalCopies} quyển trên kệ`;
+          ? `Hết bản khả dụng (0/${b.totalCopies})`
+          : `Khả dụng: ${b.availableCopies}/${b.totalCopies} quyển`;
 
         return `
           <article class="book-card">
@@ -292,15 +365,15 @@ const app = {
                 <p class="book-summary">${esc(b.description || '')}</p>
                 <div class="book-footer-meta">
                   <span class="stock-text num ${stockCls}">${stockLabel}</span>
-                  <button class="text-action" onclick="app.openBookDetail('${esc(b.id)}')">Xem chi tiết &amp; kho</button>
-                  <button class="text-action" title="Gửi đồng thời 3 yêu cầu đặt sách để kiểm tra xử lý hàng đợi khi tranh chấp" onclick="app.reserveBurst('${esc(b.id)}', 3)">Gửi nhanh 3 phiếu</button>
+                  <button class="text-action" onclick="app.openBookDetail('${esc(b.id)}')">Chi tiết sách</button>
+                  <button class="text-action" title="Gửi đồng thời 3 yêu cầu đặt sách để kiểm tra xử lý hàng đợi" onclick="app.reserveBurst('${esc(b.id)}', 3)">Gửi nhanh 3 phiếu</button>
                 </div>
               </div>
             </div>
 
             <div class="book-cta">
               <button class="btn ${out ? 'btn-outline' : 'btn-primary'}" onclick="app.reserveSingle('${esc(b.id)}')">
-                ${out ? 'Gửi yêu cầu (Hết sách)' : 'Đặt mượn sách'}
+                ${out ? 'Đặt thử (Hết sách)' : 'Đặt mượn sách'}
               </button>
             </div>
           </article>
@@ -318,6 +391,15 @@ const app = {
       if (!res.ok) throw new Error();
       const b = await res.json();
 
+      const holdersHtml = (b.activeHolders && b.activeHolders.length > 0)
+        ? b.activeHolders.map(h => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;">
+              <span>${esc(h.userName)} (<button class="text-action mono" onclick="app.closeSheets();app.inspectOrder('${esc(h.id)}')">#${esc(h.id.slice(0, 8))}</button>)</span>
+              <span class="badge badge-${esc(h.status)}">${esc(h.status)}</span>
+            </div>
+          `).join('')
+        : '<div style="font-size:12.5px;color:var(--text-muted);">Hiện chưa có bạn đọc nào đang giữ hoặc mượn cuốn này.</div>';
+
       document.getElementById('detailSheetBody').innerHTML = `
         <div style="margin-bottom:16px;">
           <h4 style="margin:0 0 4px;font-size:16px;font-weight:700;">${esc(b.title)}</h4>
@@ -332,7 +414,7 @@ const app = {
 
         <div class="num" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0;">
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#fafaf8;">
-            <div style="font-size:11.5px;color:var(--text-muted);">Còn trên kệ</div>
+            <div style="font-size:11.5px;color:var(--text-muted);">Khả dụng</div>
             <div style="font-size:19px;font-weight:700;color:var(--green-text);margin-top:2px;">${b.availableCopies}/${b.totalCopies}</div>
           </div>
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#fafaf8;">
@@ -340,14 +422,19 @@ const app = {
             <div style="font-size:19px;font-weight:700;margin-top:2px;">${b.reservedCount ?? 0}</div>
           </div>
           <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#fafaf8;">
-            <div style="font-size:11.5px;color:var(--text-muted);">Đang cho mượn</div>
+            <div style="font-size:11.5px;color:var(--text-muted);">Đang mượn</div>
             <div style="font-size:19px;font-weight:700;margin-top:2px;">${b.borrowedCount ?? 0}</div>
           </div>
         </div>
 
+        <div style="margin:16px 0;">
+          <div style="font-size:12.5px;font-weight:600;margin-bottom:6px;">Phiếu đang giữ / mượn cuốn sách này</div>
+          ${holdersHtml}
+        </div>
+
         <div style="border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:18px;">
           <label for="editCopiesInput" style="display:block;font-size:12.5px;font-weight:600;margin-bottom:8px;">
-            Cập nhật tổng số bản của đầu sách
+            Điều chỉnh tổng số bản của đầu sách
           </label>
           <div style="display:flex;gap:8px;">
             <input type="number" id="editCopiesInput" class="text-input plain num" value="${b.totalCopies}" min="1" max="500">
@@ -371,7 +458,7 @@ const app = {
 
     const res = await fetch(`${API_BASE}/books/${bookId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ totalCopies })
     });
     const data = await res.json().catch(() => ({}));
@@ -404,7 +491,7 @@ const app = {
       }
 
       document.getElementById('lookupInput').value = data.id;
-      notify(`Đã tiếp nhận phiếu <code>#${esc(data.id.slice(0, 8))}</code> vào hàng đợi xử lý.`);
+      notify(`Đã xếp hàng <code>202 Accepted</code> · Phiếu <code>#${esc(data.id.slice(0, 8))}</code> đang được Worker kiểm tra...`);
 
       await Promise.all([this.loadUserLoans(), this.loadSummaryAndHealth()]);
       this.startPolling();
@@ -430,7 +517,7 @@ const app = {
       );
 
       const list = await Promise.all(jobs);
-      notify(`Đã gửi đồng thời <strong>${list.length} phiếu đặt mượn</strong> vào hàng đợi RabbitMQ.`);
+      notify(`Đã đẩy đồng thời <strong>${list.length} yêu cầu đặt mượn</strong> vào RabbitMQ.`);
 
       await Promise.all([this.loadUserLoans(), this.loadSummaryAndHealth()]);
       this.startPolling();
@@ -447,6 +534,9 @@ const app = {
       count++;
       await Promise.all([this.loadBooks(), this.loadSummaryAndHealth()]);
       const hasPending = await this.loadUserLoans();
+      if (document.getElementById('pane-queues').classList.contains('active')) {
+        await this.loadQueuesAndLogs();
+      }
       if (hasPending && count < 12) {
         state.pollTimer = setTimeout(step, 1000);
       }
@@ -454,10 +544,10 @@ const app = {
     state.pollTimer = setTimeout(step, 850);
   },
 
-  setUserLoanFilter(activeOnly) {
-    state.userActiveOnly = activeOnly;
-    document.getElementById('filterLoanAll').classList.toggle('active', !activeOnly);
-    document.getElementById('filterLoanActive').classList.toggle('active', activeOnly);
+  setUserLoanMode(btn) {
+    document.querySelectorAll('#userLoanSwitch .pill-option').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.userLoanMode = btn.getAttribute('data-mode') || 'all';
     this.loadUserLoans();
   },
 
@@ -466,14 +556,19 @@ const app = {
     if (!userId) return false;
 
     try {
-      const qs = state.userActiveOnly ? '?activeOnly=true' : '';
+      const params = new URLSearchParams();
+      if (state.userLoanMode === 'active') params.set('activeOnly', 'true');
+      else if (state.userLoanMode !== 'all') params.set('status', state.userLoanMode);
+
+      const qs = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`${API_BASE}/users/${userId}/reservations${qs}`);
       if (!res.ok) throw new Error();
       const items = await res.json();
+      state.userLoans = items;
       const box = document.getElementById('userLoanList');
 
       if (items.length === 0) {
-        box.innerHTML = '<div class="empty-box">Chưa có phiếu đặt hoặc sách đang mượn trong mục này.</div>';
+        box.innerHTML = '<div class="empty-box">Chưa có phiếu đặt hoặc sách đang mượn trong bộ lọc này.</div>';
         return false;
       }
 
@@ -504,10 +599,10 @@ const app = {
   renderLoanButtons(r) {
     const btns = [];
     if (r.status === 'Reserved') {
-      btns.push(`<button class="btn btn-primary btn-sm" onclick="app.changeStatus('${esc(r.id)}', 'Borrowed')">Xác nhận nhận sách</button>`);
+      btns.push(`<button class="btn btn-primary btn-sm" onclick="app.changeStatus('${esc(r.id)}', 'Borrowed')">Nhận sách (Borrowed)</button>`);
     }
     if (r.status === 'Borrowed') {
-      btns.push(`<button class="btn btn-outline btn-sm" onclick="app.changeStatus('${esc(r.id)}', 'Returned')">Trả lại sách</button>`);
+      btns.push(`<button class="btn btn-outline btn-sm" onclick="app.changeStatus('${esc(r.id)}', 'Returned')">Trả sách (Returned)</button>`);
     }
     if (r.status === 'Pending' || r.status === 'Reserved') {
       btns.push(`<button class="btn btn-danger-quiet btn-sm" onclick="app.cancelOrder('${esc(r.id)}')">Hủy đặt</button>`);
@@ -518,7 +613,7 @@ const app = {
   async changeStatus(id, newStatus) {
     const res = await fetch(`${API_BASE}/reservations/${id}/status`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ newStatus })
     });
     const data = await res.json().catch(() => ({}));
@@ -533,8 +628,8 @@ const app = {
   async cancelOrder(id) {
     const res = await fetch(`${API_BASE}/reservations/${id}/cancel`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: 'Bạn đọc chủ động hủy phiếu đặt sách.' })
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ reason: 'Hủy phiếu từ giao diện Web.' })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -578,14 +673,14 @@ const app = {
         <tr>
           <td>
             <button class="text-action mono" onclick="app.inspectOrder('${esc(r.id)}')">#${esc(r.id.slice(0, 8))}</button>
-            <div class="mono" style="font-size:11px;color:var(--text-muted);">${esc((r.correlationId || '—').slice(0, 12))}</div>
+            <div class="mono" style="font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="copyId('${esc(r.correlationId || '')}', 'Correlation ID')">${esc((r.correlationId || '—').slice(0, 14))}</div>
           </td>
           <td>
             <div style="font-weight:500;">${esc(r.userName)}</div>
             <div style="font-size:12px;color:var(--text-muted);">${esc(r.userPhone || '')}</div>
           </td>
           <td style="font-weight:500;">${esc(r.bookTitle)}</td>
-          <td><span class="badge badge-${esc(r.status)}">${esc(statusText(r.status))}</span></td>
+          <td><span class="badge badge-${esc(r.status)}">${esc(r.status)}</span></td>
           <td style="color:var(--text-secondary);max-width:260px;">${esc(r.reasonMessage || '')}</td>
           <td class="num" style="color:var(--text-muted);white-space:nowrap;">${formatTime(r.createdAt)}</td>
           <td style="text-align:right;white-space:nowrap;">
@@ -598,6 +693,99 @@ const app = {
     } catch (err) {
       console.error(err);
     }
+  },
+
+  // Tab 3: Queue Telemetry, Distributed Labs & Audit Logs
+  setAuditService(btn) {
+    document.querySelectorAll('#auditServiceSwitch .pill-option').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.auditService = btn.getAttribute('data-svc') || '';
+    this.loadQueuesAndLogs();
+  },
+
+  debounceAudit() {
+    clearTimeout(state.auditTimer);
+    state.auditTimer = setTimeout(() => this.loadQueuesAndLogs(), 220);
+  },
+
+  async loadQueuesAndLogs() {
+    await this.loadSummaryAndHealth();
+    try {
+      const kw = document.getElementById('auditSearch').value.trim();
+      const params = new URLSearchParams({ limit: '50' });
+      if (state.auditService) params.set('service', state.auditService);
+      if (kw) params.set('search', kw);
+
+      const res = await fetch(`${API_BASE}/audit-logs?${params.toString()}`);
+      if (!res.ok) throw new Error();
+      const logs = await res.json();
+      const tbody = document.getElementById('auditTableBody');
+
+      if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-box">Chưa có bản ghi nhật ký nào. Hãy đặt sách hoặc bấm một thực nghiệm ở trên.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = logs.map(l => `
+        <tr>
+          <td class="num" style="white-space:nowrap;color:var(--text-muted);">${formatTime(l.createdAt)}</td>
+          <td><span class="service-tag ${l.serviceName === 'Library.Worker' ? 'worker' : ''}">${esc(l.serviceName)}</span></td>
+          <td class="mono" style="font-weight:600;">${esc(l.eventType)}</td>
+          <td class="mono">
+            ${l.correlationId
+              ? `<button class="text-action mono" onclick="copyId('${esc(l.correlationId)}', 'Correlation ID')">${esc(l.correlationId.slice(0, 14))}</button>`
+              : '—'}
+          </td>
+          <td>
+            ${esc(l.message)}
+            ${l.reservationId ? `<button class="text-action mono" style="margin-left:6px;" onclick="app.inspectOrder('${esc(l.reservationId)}')">Xem phiếu</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      console.error(err);
+    }
+  },
+
+  async runLabBurst() {
+    const targetBook = state.books.find(b => b.availableCopies === 1) || state.books[0];
+    if (!targetBook) {
+      notify('Chưa có đầu sách nào để chạy thực nghiệm.', true);
+      return;
+    }
+    await this.reserveBurst(targetBook.id, 5);
+    setTimeout(() => this.loadQueuesAndLogs(), 1400);
+  },
+
+  async runLabIdempotent() {
+    const resList = await fetch(`${API_BASE}/reservations`).then(r => r.json()).catch(() => []);
+    const processed = resList.find(r => r.status !== 'Pending');
+    if (!processed) {
+      notify('Hãy đặt ít nhất 1 cuốn sách trước để có phiếu đã duyệt dùng kiểm thử Idempotency.', true);
+      return;
+    }
+
+    const res = await fetch(`${API_BASE}/diagnostics/republish/${processed.id}`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      notify(esc(data.message || 'Không thể phát lặp lại bản tin'), true);
+      return;
+    }
+
+    notify(`Đã phát lặp lại bản tin của phiếu <code>#${esc(processed.id.slice(0, 8))}</code>. Kiểm tra sự kiện <code>IdempotentSkipped</code> bên dưới!`);
+    setTimeout(() => this.loadQueuesAndLogs(), 1100);
+  },
+
+  async runLabPoison() {
+    const res = await fetch(`${API_BASE}/diagnostics/poison-message`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      notify(esc(data.message || 'Không gửi được gói tin lỗi'), true);
+      return;
+    }
+
+    notify(`Đã gửi gói tin hỏng định dạng (Trace <code>${esc(data.correlationId)}</code>). Bộ đếm Dead Letter Queue sẽ tăng sau ~1 giây!`);
+    setTimeout(() => this.loadQueuesAndLogs(), 1100);
   },
 
   inspectOrder(id) {
@@ -623,6 +811,26 @@ const app = {
 
       const d = await res.json();
       const rejected = d.status === 'Rejected';
+
+      const trailHtml = (d.auditTrail && d.auditTrail.length > 0)
+        ? `
+          <div style="margin-top:18px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Nhật ký xử lý qua các thành phần (Audit Trail)</div>
+            <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+              ${d.auditTrail.map(a => `
+                <div style="padding:9px 14px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:12.5px;">
+                  <div>
+                    <span class="service-tag ${a.serviceName === 'Library.Worker' ? 'worker' : ''}">${esc(a.serviceName)}</span>
+                    <strong class="mono" style="margin:0 6px;">${esc(a.eventType)}</strong>
+                    <span>${esc(a.message)}</span>
+                  </div>
+                  <span class="num" style="color:var(--text-muted);font-size:11.5px;">${formatTime(a.createdAt)}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `
+        : '';
 
       out.innerHTML = `
         <div style="border:1px solid var(--border);border-radius:12px;padding:20px;background:var(--bg-card);">
@@ -659,32 +867,34 @@ const app = {
 
           <div class="steps-row num">
             <div class="step-box completed">
-              <div class="step-label">Bước 1 · Tiếp nhận API</div>
-              <div class="step-name">Lưu trạng thái chờ duyệt</div>
+              <div class="step-label">Bước 1 · Library.API</div>
+              <div class="step-name">Tiếp nhận (Pending)</div>
               <div class="step-ts">${formatTime(d.createdAt)}</div>
             </div>
 
             <div class="step-box ${rejected ? 'failed' : (d.processedAt ? 'completed' : '')}">
-              <div class="step-label">Bước 2 · RabbitMQ Worker</div>
-              <div class="step-name">${rejected ? 'Từ chối / Đã hủy' : 'Xác nhận giữ sách'}</div>
+              <div class="step-label">Bước 2 · Library.Worker</div>
+              <div class="step-name">${rejected ? 'Từ chối / Đã hủy' : 'Giữ sách (Reserved)'}</div>
               <div class="step-ts">${formatTime(d.processedAt)}</div>
             </div>
 
             <div class="step-box ${d.borrowedAt ? 'completed' : ''}">
               <div class="step-label">Bước 3 · Quầy thư viện</div>
-              <div class="step-name">Bàn giao sách mượn</div>
+              <div class="step-name">Nhận sách (Borrowed)</div>
               <div class="step-ts">${formatTime(d.borrowedAt)}</div>
             </div>
 
             <div class="step-box ${d.returnedAt ? 'completed' : ''}">
               <div class="step-label">Bước 4 · Hoàn tất</div>
-              <div class="step-name">Trả sách về kho</div>
+              <div class="step-name">Trả sách (Returned)</div>
               <div class="step-ts">${formatTime(d.returnedAt)}</div>
             </div>
           </div>
 
+          ${trailHtml}
+
           <details style="margin-top:16px;">
-            <summary style="cursor:pointer;font-size:12.5px;color:var(--text-secondary);font-weight:500;">Xem dữ liệu JSON từ máy chủ</summary>
+            <summary style="cursor:pointer;font-size:12.5px;color:var(--text-secondary);font-weight:500;">Xem dữ liệu JSON gốc từ máy chủ</summary>
             <pre class="json-box mono">${esc(JSON.stringify(d, null, 2))}</pre>
           </details>
         </div>
@@ -706,7 +916,7 @@ const app = {
 
     const res = await fetch(`${API_BASE}/books`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload)
     });
     const data = await res.json().catch(() => ({}));
@@ -732,7 +942,7 @@ const app = {
 
     const res = await fetch(`${API_BASE}/users`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload)
     });
     const data = await res.json().catch(() => ({}));
@@ -753,12 +963,16 @@ const app = {
     if (document.getElementById('pane-manage').classList.contains('active')) {
       await this.loadAllOrders();
     }
+    if (document.getElementById('pane-queues').classList.contains('active')) {
+      await this.loadQueuesAndLogs();
+    }
   },
 
   async init() {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.closeSheets();
     });
+    this.renderStaffPill();
     await this.loadMembers();
     await Promise.all([this.loadSummaryAndHealth(), this.loadBooks(), this.loadUserLoans()]);
   }

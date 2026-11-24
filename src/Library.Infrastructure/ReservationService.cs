@@ -85,12 +85,25 @@ public class ReservationService : IReservationService
                 reservation.CorrelationId = correlationId;
             }
 
-            // Idempotent consumer check: skip if already processed
+            var effectiveCid = reservation.CorrelationId ?? correlationId ?? string.Empty;
+
+            // Idempotent consumer check: skip duplicate message safely
             if (reservation.Status != ReservationStatus.Pending)
             {
                 _logger.LogInformation(
                     "[CorrelationId: {CorrelationId}] Reservation {ReservationId} already processed with status {Status}. Skipping duplicate delivery.",
-                    correlationId, reservation.Id, reservation.Status);
+                    effectiveCid, reservation.Id, reservation.Status);
+
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    ReservationId = reservation.Id,
+                    CorrelationId = effectiveCid,
+                    ServiceName = "Library.Worker",
+                    EventType = "IdempotentSkipped",
+                    Message = $"Bỏ qua bản tin lặp lại của phiếu #{reservation.Id.ToString()[..8]} (trạng thái hiện tại: {reservation.Status}), giữ nguyên tồn kho."
+                });
+
+                await _db.SaveChangesAsync(ct);
                 if (transaction is not null)
                 {
                     await transaction.CommitAsync(ct);
@@ -108,6 +121,15 @@ public class ReservationService : IReservationService
                 reservation.ReasonMessage = "Không tìm thấy thông tin sách trong hệ thống.";
                 reservation.ProcessedAt = DateTime.UtcNow;
 
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    ReservationId = reservation.Id,
+                    CorrelationId = effectiveCid,
+                    ServiceName = "Library.Worker",
+                    EventType = "WorkerRejected",
+                    Message = $"Từ chối phiếu #{reservation.Id.ToString()[..8]} do không tìm thấy đầu sách tương ứng."
+                });
+
                 await _db.SaveChangesAsync(ct);
                 if (transaction is not null)
                 {
@@ -118,7 +140,7 @@ public class ReservationService : IReservationService
 
             _logger.LogInformation(
                 "[CorrelationId: {CorrelationId}] Checking inventory for book '{Title}'. Available: {Available}/{Total}",
-                correlationId, book.Title, book.AvailableCopies, book.TotalCopies);
+                effectiveCid, book.Title, book.AvailableCopies, book.TotalCopies);
 
             ReservationProcessOutcome outcome;
             if (book.AvailableCopies > 0)
@@ -129,9 +151,18 @@ public class ReservationService : IReservationService
                 reservation.ProcessedAt = DateTime.UtcNow;
                 outcome = ReservationProcessOutcome.Approved;
 
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    ReservationId = reservation.Id,
+                    CorrelationId = effectiveCid,
+                    ServiceName = "Library.Worker",
+                    EventType = "WorkerApproved",
+                    Message = $"Duyệt giữ sách '{book.Title}' cho phiếu #{reservation.Id.ToString()[..8]}. Tồn kho còn {book.AvailableCopies}/{book.TotalCopies} quyển."
+                });
+
                 _logger.LogInformation(
                     "[CorrelationId: {CorrelationId}] APPROVED Reservation {ReservationId}. Remaining copies: {Remaining}/{Total}",
-                    correlationId, reservation.Id, book.AvailableCopies, book.TotalCopies);
+                    effectiveCid, reservation.Id, book.AvailableCopies, book.TotalCopies);
             }
             else
             {
@@ -140,9 +171,18 @@ public class ReservationService : IReservationService
                 reservation.ProcessedAt = DateTime.UtcNow;
                 outcome = ReservationProcessOutcome.Rejected;
 
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    ReservationId = reservation.Id,
+                    CorrelationId = effectiveCid,
+                    ServiceName = "Library.Worker",
+                    EventType = "WorkerRejected",
+                    Message = $"Từ chối phiếu #{reservation.Id.ToString()[..8]} ('{book.Title}') do hết bản khả dụng (0/{book.TotalCopies})."
+                });
+
                 _logger.LogWarning(
                     "[CorrelationId: {CorrelationId}] REJECTED Reservation {ReservationId} (Out of stock).",
-                    correlationId, reservation.Id);
+                    effectiveCid, reservation.Id);
             }
 
             await _db.SaveChangesAsync(ct);
@@ -177,6 +217,8 @@ public class ReservationService : IReservationService
                 false, true, "Không tìm thấy yêu cầu đặt mượn.", null, null);
         }
 
+        var cid = reservation.CorrelationId ?? string.Empty;
+
         if (newStatus == ReservationStatus.Borrowed)
         {
             if (reservation.Status != ReservationStatus.Reserved)
@@ -192,6 +234,15 @@ public class ReservationService : IReservationService
             reservation.Status = ReservationStatus.Borrowed;
             reservation.BorrowedAt = DateTime.UtcNow;
             reservation.ReasonMessage = "Bạn đọc đã nhận sách và đang trong thời gian mượn.";
+
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ReservationId = reservation.Id,
+                CorrelationId = cid,
+                ServiceName = "Library.API",
+                EventType = "BookBorrowed",
+                Message = $"Bàn giao sách '{reservation.Book?.Title}' cho phiếu #{reservation.Id.ToString()[..8]} (Borrowed)."
+            });
         }
         else if (newStatus == ReservationStatus.Returned)
         {
@@ -215,6 +266,15 @@ public class ReservationService : IReservationService
                     reservation.Book.TotalCopies,
                     reservation.Book.AvailableCopies + 1);
             }
+
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ReservationId = reservation.Id,
+                CorrelationId = cid,
+                ServiceName = "Library.API",
+                EventType = "BookReturned",
+                Message = $"Thu hồi sách '{reservation.Book?.Title}' từ phiếu #{reservation.Id.ToString()[..8]}. Tồn kho phục hồi lên {reservation.Book?.AvailableCopies}/{reservation.Book?.TotalCopies}."
+            });
         }
         else
         {
@@ -270,6 +330,17 @@ public class ReservationService : IReservationService
                 reservation.Book.TotalCopies,
                 reservation.Book.AvailableCopies + 1);
         }
+
+        _db.AuditLogs.Add(new AuditLog
+        {
+            ReservationId = reservation.Id,
+            CorrelationId = reservation.CorrelationId ?? string.Empty,
+            ServiceName = "Library.API",
+            EventType = "ReservationCancelled",
+            Message = wasReserved
+                ? $"Hủy phiếu giữ chỗ #{reservation.Id.ToString()[..8]} và hoàn +1 bản '{reservation.Book?.Title}' vào kho."
+                : $"Hủy phiếu chờ #{reservation.Id.ToString()[..8]} trước khi trừ kho."
+        });
 
         await _db.SaveChangesAsync(ct);
 

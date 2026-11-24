@@ -23,15 +23,25 @@ using var httpClient = new HttpClient(handler)
     Timeout = TimeSpan.FromSeconds(15)
 };
 
+static void ForwardRequestHeaders(HttpContext ctx, HttpRequestMessage req)
+{
+    if (ctx.Request.Headers.TryGetValue("X-Correlation-ID", out var cid) && !string.IsNullOrWhiteSpace(cid))
+    {
+        req.Headers.TryAddWithoutValidation("X-Correlation-ID", cid.ToString());
+    }
+
+    if (ctx.Request.Headers.TryGetValue("Authorization", out var auth) && !string.IsNullOrWhiteSpace(auth))
+    {
+        req.Headers.TryAddWithoutValidation("Authorization", auth.ToString());
+    }
+}
+
 static async Task<IResult> ProxyGetAsync(HttpClient client, HttpContext ctx, string path)
 {
     try
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, path);
-        if (ctx.Request.Headers.TryGetValue("X-Correlation-ID", out var cid) && !string.IsNullOrWhiteSpace(cid))
-        {
-            req.Headers.TryAddWithoutValidation("X-Correlation-ID", cid.ToString());
-        }
+        ForwardRequestHeaders(ctx, req);
 
         using var res = await client.SendAsync(req, ctx.RequestAborted);
         if (res.Headers.TryGetValues("X-Correlation-ID", out var resCid))
@@ -59,11 +69,7 @@ static async Task<IResult> ProxyBodyAsync(HttpClient client, HttpContext ctx, Ht
         {
             Content = new StringContent(string.IsNullOrWhiteSpace(body) ? "{}" : body, Encoding.UTF8, "application/json")
         };
-
-        if (ctx.Request.Headers.TryGetValue("X-Correlation-ID", out var cid) && !string.IsNullOrWhiteSpace(cid))
-        {
-            req.Headers.TryAddWithoutValidation("X-Correlation-ID", cid.ToString());
-        }
+        ForwardRequestHeaders(ctx, req);
 
         using var res = await client.SendAsync(req, ctx.RequestAborted);
         if (res.Headers.TryGetValues("X-Correlation-ID", out var resCid))
@@ -83,6 +89,20 @@ static async Task<IResult> ProxyBodyAsync(HttpClient client, HttpContext ctx, Ht
 app.MapGet("/health", () => Results.Ok(new { service = "Library.WebClient", status = "Healthy", timestamp = DateTime.UtcNow }));
 app.MapGet("/api/health", (HttpContext ctx) => ProxyGetAsync(httpClient, ctx, "/health"));
 app.MapGet("/api/stats", (HttpContext ctx) => ProxyGetAsync(httpClient, ctx, "/stats"));
+app.MapGet("/api/queues", (HttpContext ctx) => ProxyGetAsync(httpClient, ctx, "/queues"));
+
+app.MapPost("/api/auth/login", (HttpContext ctx) => ProxyBodyAsync(httpClient, ctx, HttpMethod.Post, "/auth/login"));
+app.MapGet("/api/auth/me", (HttpContext ctx) => ProxyGetAsync(httpClient, ctx, "/auth/me"));
+
+app.MapGet("/api/audit-logs", (HttpContext ctx, string? service, string? search, int? limit) =>
+{
+    var qs = new List<string>();
+    if (!string.IsNullOrWhiteSpace(service)) qs.Add($"service={Uri.EscapeDataString(service)}");
+    if (!string.IsNullOrWhiteSpace(search)) qs.Add($"search={Uri.EscapeDataString(search)}");
+    if (limit.HasValue) qs.Add($"limit={limit.Value}");
+    var path = qs.Count == 0 ? "/audit-logs" : $"/audit-logs?{string.Join("&", qs)}";
+    return ProxyGetAsync(httpClient, ctx, path);
+});
 
 app.MapGet("/api/books", (HttpContext ctx, string? search, bool? availableOnly) =>
 {
@@ -126,5 +146,11 @@ app.MapPut("/api/reservations/{id:guid}/status", (Guid id, HttpContext ctx) =>
 
 app.MapPost("/api/reservations/{id:guid}/cancel", (Guid id, HttpContext ctx) =>
     ProxyBodyAsync(httpClient, ctx, HttpMethod.Post, $"/reservations/{id}/cancel"));
+
+app.MapPost("/api/diagnostics/republish/{reservationId:guid}", (Guid reservationId, HttpContext ctx) =>
+    ProxyBodyAsync(httpClient, ctx, HttpMethod.Post, $"/diagnostics/republish/{reservationId}"));
+
+app.MapPost("/api/diagnostics/poison-message", (HttpContext ctx) =>
+    ProxyBodyAsync(httpClient, ctx, HttpMethod.Post, "/diagnostics/poison-message"));
 
 app.Run();

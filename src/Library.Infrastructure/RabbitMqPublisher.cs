@@ -6,9 +6,19 @@ using RabbitMQ.Client;
 
 namespace Library.Infrastructure;
 
+public record RabbitMqQueueMetrics(
+    bool Connected,
+    string MainQueueName,
+    uint MainQueueMessages,
+    uint MainQueueConsumers,
+    string DeadLetterQueueName,
+    uint DeadLetterMessages);
+
 public interface IMessagePublisher
 {
     Task PublishAsync<T>(string exchange, string routingKey, T message, string? correlationId = null, int retryCount = 0);
+    Task PublishRawAsync(string exchange, string routingKey, string rawPayload, string? correlationId = null);
+    RabbitMqQueueMetrics GetQueueMetrics();
     bool CheckHealth();
 }
 
@@ -101,6 +111,69 @@ public class RabbitMqPublisher : IMessagePublisher, IDisposable
             resolvedCorrelationId, exchange, routingKey, retryCount);
 
         return Task.CompletedTask;
+    }
+
+    public Task PublishRawAsync(string exchange, string routingKey, string rawPayload, string? correlationId = null)
+    {
+        var resolvedCorrelationId = string.IsNullOrWhiteSpace(correlationId)
+            ? Guid.NewGuid().ToString()
+            : correlationId;
+        var body = Encoding.UTF8.GetBytes(rawPayload);
+
+        lock (_lock)
+        {
+            EnsureConnectedLocked();
+
+            var props = _channel!.CreateBasicProperties();
+            props.Persistent = true;
+            props.ContentType = "application/json";
+            props.CorrelationId = resolvedCorrelationId;
+            props.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+
+            _channel.BasicPublish(
+                exchange: exchange,
+                routingKey: routingKey,
+                basicProperties: props,
+                body: body);
+        }
+
+        _logger.LogInformation(
+            "[CorrelationId: {CorrelationId}] Published raw diagnostic payload to {Exchange}/{RoutingKey}",
+            resolvedCorrelationId, exchange, routingKey);
+
+        return Task.CompletedTask;
+    }
+
+    public RabbitMqQueueMetrics GetQueueMetrics()
+    {
+        try
+        {
+            lock (_lock)
+            {
+                EnsureConnectedLocked();
+                var mainOk = _channel!.QueueDeclarePassive(RabbitMqConstants.ReservationQueueName);
+                var dlqOk = _channel.QueueDeclarePassive(RabbitMqConstants.DeadLetterQueueName);
+
+                return new RabbitMqQueueMetrics(
+                    true,
+                    RabbitMqConstants.ReservationQueueName,
+                    mainOk.MessageCount,
+                    mainOk.ConsumerCount,
+                    RabbitMqConstants.DeadLetterQueueName,
+                    dlqOk.MessageCount);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Unable to inspect RabbitMQ queue metrics: {Message}", ex.Message);
+            return new RabbitMqQueueMetrics(
+                false,
+                RabbitMqConstants.ReservationQueueName,
+                0,
+                0,
+                RabbitMqConstants.DeadLetterQueueName,
+                0);
+        }
     }
 
     public bool CheckHealth()

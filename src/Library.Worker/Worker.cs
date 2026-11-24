@@ -105,6 +105,14 @@ public class Worker : BackgroundService
                         jsonEx,
                         "[CorrelationId: {CorrelationId}] Malformed JSON payload. Routing poison message directly to DLQ.",
                         correlationId);
+
+                    await RecordWorkerAuditAsync(
+                        null,
+                        correlationId,
+                        "DeadLetterRouted",
+                        $"Phát hiện gói tin hỏng định dạng JSON — đã từ chối (BasicReject) và chuyển sang '{RabbitMqConstants.DeadLetterQueueName}'.",
+                        stoppingToken);
+
                     _channel?.BasicReject(deliveryTag: ea.DeliveryTag, requeue: false);
                     return;
                 }
@@ -114,6 +122,14 @@ public class Worker : BackgroundService
                     _logger.LogWarning(
                         "[CorrelationId: {CorrelationId}] Invalid message payload (missing ReservationId). Routing to DLQ.",
                         correlationId);
+
+                    await RecordWorkerAuditAsync(
+                        null,
+                        correlationId,
+                        "DeadLetterRouted",
+                        $"Gói tin thiếu ReservationId hợp lệ — đã cô lập sang '{RabbitMqConstants.DeadLetterQueueName}'.",
+                        stoppingToken);
+
                     _channel?.BasicReject(deliveryTag: ea.DeliveryTag, requeue: false);
                     return;
                 }
@@ -126,7 +142,7 @@ public class Worker : BackgroundService
 
                     if (result.Outcome == ReservationProcessOutcome.NotFound)
                     {
-                        await HandleRetryOrDeadLetterAsync(ea.DeliveryTag, message, correlationId, retryCount, "Reservation record not found", stoppingToken);
+                        await HandleRetryOrDeadLetterAsync(ea.DeliveryTag, message, correlationId, retryCount, "Không tìm thấy bản ghi phiếu trong DB", stoppingToken);
                         return;
                     }
 
@@ -171,6 +187,13 @@ public class Worker : BackgroundService
                 "[CorrelationId: {CorrelationId}] Scheduling retry {NextRetry}/{MaxRetries} after {Delay}s ({Reason})",
                 correlationId, nextRetry, RabbitMqConstants.MaxRetryCount, delaySeconds, reason);
 
+            await RecordWorkerAuditAsync(
+                message.ReservationId,
+                correlationId,
+                "WorkerRetryScheduled",
+                $"Thử lại lần {nextRetry}/{RabbitMqConstants.MaxRetryCount} sau {delaySeconds}s do lỗi tạm thời: {reason}",
+                ct);
+
             await Task.Delay(TimeSpan.FromSeconds(delaySeconds), ct);
             await _publisher.PublishAsync(
                 RabbitMqConstants.ExchangeName,
@@ -183,10 +206,44 @@ public class Worker : BackgroundService
         }
         else
         {
+            await RecordWorkerAuditAsync(
+                message.ReservationId,
+                correlationId,
+                "DeadLetterRouted",
+                $"Đã vượt quá {RabbitMqConstants.MaxRetryCount} lần thử lại ({reason}) — chuyển thông điệp sang '{RabbitMqConstants.DeadLetterQueueName}'.",
+                ct);
+
             _channel?.BasicReject(deliveryTag: deliveryTag, requeue: false);
             _logger.LogError(
                 "[CorrelationId: {CorrelationId}] Max retries ({MaxRetries}) exceeded ({Reason}). Message routed to Dead Letter Queue '{Dlq}'.",
                 correlationId, RabbitMqConstants.MaxRetryCount, reason, RabbitMqConstants.DeadLetterQueueName);
+        }
+    }
+
+    private async Task RecordWorkerAuditAsync(
+        Guid? reservationId,
+        string correlationId,
+        string eventType,
+        string message,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
+            db.AuditLogs.Add(new AuditLog
+            {
+                ReservationId = reservationId,
+                CorrelationId = correlationId,
+                ServiceName = "Library.Worker",
+                EventType = eventType,
+                Message = message
+            });
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Could not write worker audit log: {Message}", ex.Message);
         }
     }
 

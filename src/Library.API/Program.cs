@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Library.Domain;
 using Library.Infrastructure;
@@ -8,6 +11,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("LibraryDb")
     ?? "Host=localhost;Port=5432;Database=library_db;Username=postgres;Password=postgrespassword";
+
+var staffUserConfig = builder.Configuration["StaffAuth:Username"] ?? "thuthu";
+var staffPassConfig = builder.Configuration["StaffAuth:Password"] ?? "123456";
+var staffSecretConfig = builder.Configuration["StaffAuth:Secret"] ?? "library-distributed-staff-hmac-key-2026";
 
 builder.Services.AddDbContext<LibraryDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -26,8 +33,8 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new()
     {
         Title = "Hệ Thống Thư Viện & Đặt Mượn Sách Phân Tán API",
-        Version = "v2.0",
-        Description = "ASP.NET Core Minimal API kết hợp RabbitMQ, Background Worker, Retry + Dead Letter Queue và PostgreSQL."
+        Version = "v2.3",
+        Description = "ASP.NET Core Minimal API kết hợp RabbitMQ, Worker, Dead Letter Queue, Audit Log và Xác thực Thủ thư."
     });
 });
 
@@ -65,7 +72,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseCors();
 
-// Correlation ID Middleware xuyên suốt toàn bộ request/response
+// Middleware gắn Correlation ID xuyên suốt mọi request và response
 app.Use(async (context, next) =>
 {
     var incomingId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault();
@@ -82,6 +89,88 @@ app.Use(async (context, next) =>
 
 app.UseSwagger();
 app.UseSwaggerUI();
+
+string IssueStaffToken(string username)
+{
+    var expUnix = DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeSeconds();
+    var payload = JsonSerializer.Serialize(new { sub = username, role = "Librarian", exp = expUnix });
+    var payloadB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
+    using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(staffSecretConfig));
+    var sigB64 = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadB64)));
+    return $"{payloadB64}.{sigB64}";
+}
+
+(bool Valid, string? Username) VerifyStaffToken(HttpContext ctx)
+{
+    var authHeader = ctx.Request.Headers["Authorization"].FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        return (false, null);
+    }
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var parts = token.Split('.');
+    if (parts.Length != 2) return (false, null);
+
+    using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(staffSecretConfig));
+    var expectedSig = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(parts[0])));
+    if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(parts[1]), Encoding.UTF8.GetBytes(expectedSig)))
+    {
+        return (false, null);
+    }
+
+    try
+    {
+        var json = Encoding.UTF8.GetString(Convert.FromBase64String(parts[0]));
+        using var doc = JsonDocument.Parse(json);
+        var exp = doc.RootElement.GetProperty("exp").GetInt64();
+        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp) return (false, null);
+        var sub = doc.RootElement.GetProperty("sub").GetString();
+        return (true, sub);
+    }
+    catch
+    {
+        return (false, null);
+    }
+}
+
+// Xác thực Thủ thư (Authentication / Authorization mở rộng theo HUONG-DAN-CHUNG.md)
+app.MapPost("/auth/login", ([FromBody] StaffLoginRequest req) =>
+{
+    if (!string.Equals(req.Username?.Trim(), staffUserConfig, StringComparison.OrdinalIgnoreCase) ||
+        req.Password != staffPassConfig)
+    {
+        return Results.Json(new { message = "Tài khoản hoặc mật khẩu thủ thư không chính xác." }, statusCode: 401);
+    }
+
+    var token = IssueStaffToken(staffUserConfig);
+    return Results.Ok(new
+    {
+        token,
+        username = staffUserConfig,
+        displayName = "Thủ thư trực quầy",
+        role = "Librarian"
+    });
+})
+.WithName("StaffLogin");
+
+app.MapGet("/auth/me", (HttpContext ctx) =>
+{
+    var (valid, username) = VerifyStaffToken(ctx);
+    if (!valid)
+    {
+        return Results.Json(new { authenticated = false }, statusCode: 401);
+    }
+
+    return Results.Ok(new
+    {
+        authenticated = true,
+        username,
+        displayName = "Thủ thư trực quầy",
+        role = "Librarian"
+    });
+})
+.WithName("GetCurrentStaff");
 
 // 0. GET /health: Kiểm tra tình trạng thực tế của PostgreSQL và RabbitMQ
 app.MapGet("/health", async (LibraryDbContext db, IMessagePublisher publisher) =>
@@ -108,6 +197,59 @@ app.MapGet("/health", async (LibraryDbContext db, IMessagePublisher publisher) =
     });
 })
 .WithName("HealthCheck");
+
+// GET /queues: Số liệu trực tiếp từ hàng đợi chính và Dead Letter Queue trên RabbitMQ
+app.MapGet("/queues", (IMessagePublisher publisher) =>
+{
+    var metrics = publisher.GetQueueMetrics();
+    return Results.Ok(new
+    {
+        metrics.Connected,
+        exchangeName = RabbitMqConstants.ExchangeName,
+        metrics.MainQueueName,
+        metrics.MainQueueMessages,
+        metrics.MainQueueConsumers,
+        deadLetterExchangeName = RabbitMqConstants.DeadLetterExchangeName,
+        metrics.DeadLetterQueueName,
+        metrics.DeadLetterMessages,
+        maxRetryCount = RabbitMqConstants.MaxRetryCount,
+        timestamp = DateTime.UtcNow
+    });
+})
+.WithName("GetQueueMetrics");
+
+// GET /audit-logs: Nhật ký sự kiện xuyên dịch vụ (API & Worker)
+app.MapGet("/audit-logs", async (
+    [FromQuery] string? service,
+    [FromQuery] string? search,
+    [FromQuery] int? limit,
+    LibraryDbContext db) =>
+{
+    var takeCount = limit is > 0 and <= 100 ? limit.Value : 40;
+    var query = db.AuditLogs.AsNoTracking().AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(service))
+    {
+        query = query.Where(a => a.ServiceName == service.Trim());
+    }
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var kw = search.Trim().ToLower();
+        query = query.Where(a =>
+            a.CorrelationId.ToLower().Contains(kw) ||
+            a.EventType.ToLower().Contains(kw) ||
+            a.Message.ToLower().Contains(kw));
+    }
+
+    var logs = await query
+        .OrderByDescending(a => a.CreatedAt)
+        .Take(takeCount)
+        .ToListAsync();
+
+    return Results.Ok(logs);
+})
+.WithName("GetAuditLogs");
 
 // GET /stats: Thống kê tổng quan cho Dashboard
 app.MapGet("/stats", async (LibraryDbContext db) =>
@@ -164,7 +306,7 @@ app.MapGet("/books", async ([FromQuery] string? search, [FromQuery] bool? availa
 })
 .WithName("GetBooks");
 
-// 2. GET /books/{id}: Chi tiết sách và số bản đang khả dụng
+// 2. GET /books/{id}: Chi tiết sách, số bản đang khả dụng và danh sách phiếu giữ/mượn gần đây
 app.MapGet("/books/{id:guid}", async (Guid id, LibraryDbContext db) =>
 {
     var book = await db.Books.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id);
@@ -176,6 +318,21 @@ app.MapGet("/books/{id:guid}", async (Guid id, LibraryDbContext db) =>
     var activeReservedCount = await db.Reservations.CountAsync(r => r.BookId == id && r.Status == ReservationStatus.Reserved);
     var activeBorrowedCount = await db.Reservations.CountAsync(r => r.BookId == id && r.Status == ReservationStatus.Borrowed);
     var pendingCount = await db.Reservations.CountAsync(r => r.BookId == id && r.Status == ReservationStatus.Pending);
+
+    var activeHolders = await db.Reservations
+        .AsNoTracking()
+        .Include(r => r.User)
+        .Where(r => r.BookId == id && (r.Status == ReservationStatus.Reserved || r.Status == ReservationStatus.Borrowed || r.Status == ReservationStatus.Pending))
+        .OrderByDescending(r => r.CreatedAt)
+        .Take(6)
+        .Select(r => new
+        {
+            r.Id,
+            UserName = r.User != null ? r.User.FullName : "Bạn đọc",
+            Status = r.Status.ToString(),
+            r.CreatedAt
+        })
+        .ToListAsync();
 
     return Results.Ok(new
     {
@@ -189,13 +346,14 @@ app.MapGet("/books/{id:guid}", async (Guid id, LibraryDbContext db) =>
         book.CreatedAt,
         pendingCount,
         reservedCount = activeReservedCount,
-        borrowedCount = activeBorrowedCount
+        borrowedCount = activeBorrowedCount,
+        activeHolders
     });
 })
 .WithName("GetBookById");
 
 // POST /books: Thêm đầu sách mới
-app.MapPost("/books", async ([FromBody] CreateBookRequest req, LibraryDbContext db) =>
+app.MapPost("/books", async (HttpContext ctx, [FromBody] CreateBookRequest req, LibraryDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(req.Title))
     {
@@ -215,14 +373,25 @@ app.MapPost("/books", async ([FromBody] CreateBookRequest req, LibraryDbContext 
         CreatedAt = DateTime.UtcNow
     };
 
+    var (isStaff, staffName) = VerifyStaffToken(ctx);
+    var cid = ctx.Items["CorrelationId"]?.ToString() ?? string.Empty;
+
     db.Books.Add(book);
+    db.AuditLogs.Add(new AuditLog
+    {
+        CorrelationId = cid,
+        ServiceName = "Library.API",
+        EventType = "BookCreated",
+        Message = $"Nhập mới đầu sách '{book.Title}' ({book.TotalCopies} quyển){(isStaff ? $" bởi thủ thư '{staffName}'" : "")}."
+    });
+
     await db.SaveChangesAsync();
     return Results.Created($"/books/{book.Id}", book);
 })
 .WithName("CreateBook");
 
 // PUT /books/{id}: Cập nhật thông tin sách và bổ sung số lượng bản
-app.MapPut("/books/{id:guid}", async (Guid id, [FromBody] UpdateBookRequest req, LibraryDbContext db) =>
+app.MapPut("/books/{id:guid}", async (Guid id, HttpContext ctx, [FromBody] UpdateBookRequest req, LibraryDbContext db) =>
 {
     var book = await db.Books.FirstOrDefaultAsync(b => b.Id == id);
     if (book is null)
@@ -230,22 +399,10 @@ app.MapPut("/books/{id:guid}", async (Guid id, [FromBody] UpdateBookRequest req,
         return Results.NotFound(new { message = $"Không tìm thấy sách có ID {id}" });
     }
 
-    if (!string.IsNullOrWhiteSpace(req.Title))
-    {
-        book.Title = req.Title.Trim();
-    }
-    if (req.Author is not null)
-    {
-        book.Author = string.IsNullOrWhiteSpace(req.Author) ? "Chưa rõ" : req.Author.Trim();
-    }
-    if (req.ISBN is not null)
-    {
-        book.ISBN = req.ISBN.Trim();
-    }
-    if (req.Description is not null)
-    {
-        book.Description = req.Description.Trim();
-    }
+    if (!string.IsNullOrWhiteSpace(req.Title)) book.Title = req.Title.Trim();
+    if (req.Author is not null) book.Author = string.IsNullOrWhiteSpace(req.Author) ? "Chưa rõ" : req.Author.Trim();
+    if (req.ISBN is not null) book.ISBN = req.ISBN.Trim();
+    if (req.Description is not null) book.Description = req.Description.Trim();
 
     if (req.TotalCopies.HasValue)
     {
@@ -261,6 +418,15 @@ app.MapPut("/books/{id:guid}", async (Guid id, [FromBody] UpdateBookRequest req,
         book.TotalCopies = req.TotalCopies.Value;
         book.AvailableCopies = book.TotalCopies - currentlyCheckedOut;
     }
+
+    var cid = ctx.Items["CorrelationId"]?.ToString() ?? string.Empty;
+    db.AuditLogs.Add(new AuditLog
+    {
+        CorrelationId = cid,
+        ServiceName = "Library.API",
+        EventType = "BookUpdated",
+        Message = $"Cập nhật đầu sách '{book.Title}': khả dụng {book.AvailableCopies}/{book.TotalCopies} quyển."
+    });
 
     await db.SaveChangesAsync();
     return Results.Ok(book);
@@ -306,6 +472,14 @@ app.MapPost("/reservations", async (
     };
 
     db.Reservations.Add(reservation);
+    db.AuditLogs.Add(new AuditLog
+    {
+        ReservationId = reservation.Id,
+        CorrelationId = correlationId,
+        ServiceName = "Library.API",
+        EventType = "ReservationAccepted",
+        Message = $"Tiếp nhận phiếu #{reservation.Id.ToString()[..8]} ('{book.Title}' — {user.FullName}), lưu Pending và phát vào RabbitMQ."
+    });
     await db.SaveChangesAsync();
 
     logger.LogInformation(
@@ -372,6 +546,12 @@ app.MapGet("/reservations/{id:guid}", async (Guid id, LibraryDbContext db) =>
         return Results.NotFound(new { message = $"Không tìm thấy yêu cầu đặt mượn có ID {id}" });
     }
 
+    var auditTrail = await db.AuditLogs
+        .AsNoTracking()
+        .Where(a => a.ReservationId == id || (!string.IsNullOrEmpty(reservation.CorrelationId) && a.CorrelationId == reservation.CorrelationId))
+        .OrderBy(a => a.CreatedAt)
+        .ToListAsync();
+
     return Results.Ok(new
     {
         reservation.Id,
@@ -389,12 +569,13 @@ app.MapGet("/reservations/{id:guid}", async (Guid id, LibraryDbContext db) =>
         reservation.CreatedAt,
         reservation.ProcessedAt,
         reservation.BorrowedAt,
-        reservation.ReturnedAt
+        reservation.ReturnedAt,
+        auditTrail
     });
 })
 .WithName("GetReservationById");
 
-// GET /reservations: Danh sách tất cả đơn đặt mượn trong hệ thống (Quản trị thư viện)
+// GET /reservations: Danh sách tất cả đơn đặt mượn trong hệ thống
 app.MapGet("/reservations", async ([FromQuery] string? status, [FromQuery] string? search, LibraryDbContext db) =>
 {
     var query = db.Reservations
@@ -441,7 +622,7 @@ app.MapGet("/reservations", async ([FromQuery] string? status, [FromQuery] strin
 })
 .WithName("GetAllReservations");
 
-// 5. GET /users/{userId}/reservations: Danh sách sách đang mượn / đã đặt hoặc toàn bộ lịch sử của bạn đọc
+// 5. GET /users/{userId}/reservations: Danh sách sách đang mượn / đã đặt hoặc lịch sử của bạn đọc
 app.MapGet("/users/{userId:guid}/reservations", async (
     Guid userId,
     [FromQuery] bool? activeOnly,
@@ -503,7 +684,7 @@ app.MapGet("/users", async (LibraryDbContext db) =>
 .WithName("GetUsers");
 
 // POST /users: Thêm bạn đọc mới
-app.MapPost("/users", async ([FromBody] CreateUserRequest req, LibraryDbContext db) =>
+app.MapPost("/users", async (HttpContext ctx, [FromBody] CreateUserRequest req, LibraryDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(req.FullName))
     {
@@ -530,6 +711,14 @@ app.MapPost("/users", async ([FromBody] CreateUserRequest req, LibraryDbContext 
     };
 
     db.Users.Add(user);
+    db.AuditLogs.Add(new AuditLog
+    {
+        CorrelationId = ctx.Items["CorrelationId"]?.ToString() ?? string.Empty,
+        ServiceName = "Library.API",
+        EventType = "UserRegistered",
+        Message = $"Đăng ký thẻ bạn đọc mới cho '{user.FullName}'."
+    });
+
     await db.SaveChangesAsync();
     return Results.Created($"/users/{user.Id}", user);
 })
@@ -564,7 +753,7 @@ app.MapPut("/reservations/{id:guid}/status", async (
 })
 .WithName("UpdateReservationStatus");
 
-// POST /reservations/{id}/cancel: Hủy đơn đặt mượn đang Pending hoặc Reserved (tự hoàn lại bản sách nếu đã Reserved)
+// POST /reservations/{id}/cancel: Hủy đơn đặt mượn đang Pending hoặc Reserved
 app.MapPost("/reservations/{id:guid}/cancel", async (
     Guid id,
     [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] CancelReservationRequest? req,
@@ -591,8 +780,89 @@ app.MapPost("/reservations/{id:guid}/cancel", async (
 })
 .WithName("CancelReservation");
 
+// API Kiểm chứng thực nghiệm 1: Phát lặp lại thông điệp đã xử lý để chứng minh Idempotent Consumer
+app.MapPost("/diagnostics/republish/{reservationId:guid}", async (
+    Guid reservationId,
+    LibraryDbContext db,
+    IMessagePublisher publisher) =>
+{
+    var reservation = await db.Reservations.AsNoTracking().FirstOrDefaultAsync(r => r.Id == reservationId);
+    if (reservation is null)
+    {
+        return Results.NotFound(new { message = "Không tìm thấy phiếu đặt mượn để phát lặp lại." });
+    }
+
+    var cid = string.IsNullOrWhiteSpace(reservation.CorrelationId) ? Guid.NewGuid().ToString() : reservation.CorrelationId;
+    var duplicateMsg = new ReservationRequestedMessage
+    {
+        ReservationId = reservation.Id,
+        BookId = reservation.BookId,
+        UserId = reservation.UserId,
+        RequestedAt = reservation.CreatedAt,
+        CorrelationId = cid
+    };
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        ReservationId = reservation.Id,
+        CorrelationId = cid,
+        ServiceName = "Library.API",
+        EventType = "DuplicateTestSent",
+        Message = $"Phát lặp lại bản tin đặt mượn của phiếu #{reservation.Id.ToString()[..8]} vào RabbitMQ để kiểm chứng Idempotent Consumer."
+    });
+    await db.SaveChangesAsync();
+
+    await publisher.PublishAsync(
+        RabbitMqConstants.ExchangeName,
+        RabbitMqConstants.ReservationRoutingKey,
+        duplicateMsg,
+        cid);
+
+    return Results.Ok(new
+    {
+        reservationId = reservation.Id,
+        correlationId = cid,
+        message = "Đã phát lặp lại thông điệp vào RabbitMQ. Worker sẽ kiểm tra trạng thái và bỏ qua an toàn không trừ kho lần hai."
+    });
+})
+.WithName("RepublishDuplicateMessage");
+
+// API Kiểm chứng thực nghiệm 2: Bắn bản tin hỏng định dạng để kiểm chứng Dead Letter Queue (DLQ)
+app.MapPost("/diagnostics/poison-message", async (
+    HttpContext ctx,
+    LibraryDbContext db,
+    IMessagePublisher publisher) =>
+{
+    var cid = $"dlq-{Guid.NewGuid().ToString()[..8]}";
+    var corruptedPayload = "{ \"corrupted\": true, \"broken_json\": ";
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        CorrelationId = cid,
+        ServiceName = "Library.API",
+        EventType = "PoisonTestSent",
+        Message = "Gửi thử gói tin hỏng định dạng JSON vào library.exchange để kiểm chứng định tuyến sang Dead Letter Queue."
+    });
+    await db.SaveChangesAsync();
+
+    await publisher.PublishRawAsync(
+        RabbitMqConstants.ExchangeName,
+        RabbitMqConstants.ReservationRoutingKey,
+        corruptedPayload,
+        cid);
+
+    return Results.Ok(new
+    {
+        correlationId = cid,
+        deadLetterQueue = RabbitMqConstants.DeadLetterQueueName,
+        message = "Đã đẩy gói tin lỗi vào RabbitMQ. Worker sẽ từ chối (BasicReject) và chuyển sang hàng đợi library.reservations.dlq."
+    });
+})
+.WithName("PublishPoisonMessage");
+
 app.Run();
 
+public record StaffLoginRequest(string Username, string Password);
 public record CreateReservationRequest(Guid BookId, Guid UserId);
 public record UpdateReservationStatusRequest(ReservationStatus NewStatus);
 public record CancelReservationRequest(string? Reason);

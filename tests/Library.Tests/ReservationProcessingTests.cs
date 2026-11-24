@@ -350,4 +350,55 @@ public class ReservationProcessingTests
         Assert.NotNull(finalBook);
         Assert.Equal(0, finalBook.AvailableCopies);
     }
+
+    [Fact]
+    public async Task ProcessReservation_AndLifecycle_ShouldWriteStructuredAuditLogs()
+    {
+        using var db = CreateInMemoryDbContext();
+        var service = CreateService(db);
+
+        var book = new Book
+        {
+            Id = Guid.NewGuid(),
+            Title = "Audit Trail Verification Book",
+            TotalCopies = 2,
+            AvailableCopies = 2
+        };
+        var user = new User { Id = Guid.NewGuid(), FullName = "Nguyễn Văn An" };
+        var reservation = new Reservation
+        {
+            Id = Guid.NewGuid(),
+            BookId = book.Id,
+            UserId = user.Id,
+            Status = ReservationStatus.Pending
+        };
+
+        db.Books.Add(book);
+        db.Users.Add(user);
+        db.Reservations.Add(reservation);
+        await db.SaveChangesAsync();
+
+        var msg = new ReservationRequestedMessage
+        {
+            ReservationId = reservation.Id,
+            BookId = book.Id,
+            UserId = user.Id,
+            RequestedAt = DateTime.UtcNow
+        };
+
+        await service.ProcessReservationAsync(msg, "trace-audit-01");
+        await service.ProcessReservationAsync(msg, "trace-audit-01"); // Duplicate
+        await service.UpdateStatusAsync(reservation.Id, ReservationStatus.Borrowed);
+        await service.UpdateStatusAsync(reservation.Id, ReservationStatus.Returned);
+
+        var events = await db.AuditLogs
+            .OrderBy(a => a.CreatedAt)
+            .Select(a => a.EventType)
+            .ToListAsync();
+
+        Assert.Contains("WorkerApproved", events);
+        Assert.Contains("IdempotentSkipped", events);
+        Assert.Contains("BookBorrowed", events);
+        Assert.Contains("BookReturned", events);
+    }
 }

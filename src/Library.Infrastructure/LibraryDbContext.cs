@@ -10,6 +10,7 @@ public class LibraryDbContext : DbContext
     public DbSet<Book> Books => Set<Book>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Reservation> Reservations => Set<Reservation>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +51,17 @@ public class LibraryDbContext : DbContext
                   .HasForeignKey(r => r.UserId)
                   .OnDelete(DeleteBehavior.Restrict);
         });
+
+        modelBuilder.Entity<AuditLog>(entity =>
+        {
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.CorrelationId).HasMaxLength(100);
+            entity.Property(a => a.ServiceName).IsRequired().HasMaxLength(80);
+            entity.Property(a => a.EventType).IsRequired().HasMaxLength(80);
+            entity.Property(a => a.Message).IsRequired().HasMaxLength(600);
+            entity.HasIndex(a => a.CreatedAt);
+            entity.HasIndex(a => a.CorrelationId);
+        });
     }
 
     public static async Task SeedDataAsync(LibraryDbContext context)
@@ -60,6 +72,20 @@ public class LibraryDbContext : DbContext
         {
             await context.Database.ExecuteSqlRawAsync(
                 @"ALTER TABLE ""Reservations"" ADD COLUMN IF NOT EXISTS ""CorrelationId"" character varying(100);");
+
+            await context.Database.ExecuteSqlRawAsync(
+                @"CREATE TABLE IF NOT EXISTS ""AuditLogs"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ReservationId"" uuid NULL,
+                    ""CorrelationId"" character varying(100) NOT NULL DEFAULT '',
+                    ""ServiceName"" character varying(80) NOT NULL,
+                    ""EventType"" character varying(80) NOT NULL,
+                    ""Message"" character varying(600) NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL
+                );");
+
+            await context.Database.ExecuteSqlRawAsync(
+                @"CREATE INDEX IF NOT EXISTS ""IX_AuditLogs_CreatedAt"" ON ""AuditLogs"" (""CreatedAt"");");
         }
 
         if (!await context.Users.AnyAsync())

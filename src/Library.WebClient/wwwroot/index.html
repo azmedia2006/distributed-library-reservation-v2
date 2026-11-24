@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thư viện Số — Hệ thống Đặt mượn Sách Phân tán</title>
+  <title>Thư viện Đại học — Hệ thống Đặt mượn Sách Phân tán</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -34,6 +34,10 @@
             Quản lý mượn trả
             <span class="tab-badge num" id="badgeOrders">0</span>
           </button>
+          <button class="nav-tab" id="tab-queues" onclick="app.switchTab('queues')">
+            Hàng đợi &amp; Nhật ký
+            <span class="tab-badge num" id="badgeDlq" title="Số gói tin trong Dead Letter Queue">0</span>
+          </button>
           <button class="nav-tab" id="tab-members" onclick="app.switchTab('members')">
             Bạn đọc
             <span class="tab-badge num" id="badgeMembers">0</span>
@@ -45,14 +49,17 @@
       </div>
 
       <div class="header-right">
-        <div class="reader-picker" title="Độc giả đang thao tác đặt sách">
+        <div class="reader-picker" title="Bạn đọc đang thao tác đặt sách">
           <div class="reader-avatar" id="currentAvatar">BD</div>
           <select id="readerSelect" class="reader-select" onchange="app.onReaderChange()">
-            <option value="">Đang tải bạn đọc...</option>
+            <option value="">Đang tải...</option>
           </select>
         </div>
 
-        <button class="btn btn-outline btn-sm" onclick="app.openSheet('memberSheet')">+ Bạn đọc</button>
+        <button class="staff-pill" id="staffBtn" onclick="app.handleStaffClick()" title="Xác thực quyền Thủ thư trực quầy">
+          Thủ thư: Đăng nhập
+        </button>
+
         <button class="btn btn-dark btn-sm" onclick="app.openSheet('bookSheet')">+ Thêm sách</button>
       </div>
     </div>
@@ -64,11 +71,11 @@
       <div class="summary-metrics num">
         <span class="summary-item"><strong id="sumBooks">0</strong> đầu sách (<span id="sumTotalCopies">0</span> quyển)</span>
         <span class="summary-divider"></span>
-        <span class="summary-item">Sẵn sàng cho mượn: <strong id="sumAvail">0</strong> quyển</span>
+        <span class="summary-item">Khả dụng: <strong id="sumAvail">0</strong> quyển</span>
         <span class="summary-divider"></span>
         <span class="summary-item">Đang giữ &amp; mượn: <strong id="sumActive">0</strong> phiếu</span>
         <span class="summary-divider"></span>
-        <span class="summary-item" id="sumQueueWrap">Hàng đợi chờ duyệt: <strong id="sumPending">0</strong></span>
+        <span class="summary-item" id="sumQueueWrap">Chờ duyệt: <strong id="sumPending">0</strong></span>
       </div>
 
       <div class="infra-status">
@@ -82,15 +89,15 @@
   <!-- Nội dung chính -->
   <main class="page-container">
 
-    <!-- TAB 1: DANH MỤC SÁCH & PHIẾU CỦA BẠN ĐỌC -->
+    <!-- TAB 1: DANH MỤC SÁCH & PHIẾU CỦA BẠN ĐỌC (8 chức năng chính Đề tài 20) -->
     <section class="view-pane active" id="pane-catalog">
       <div class="library-grid">
         <!-- Cột trái: Kho sách -->
         <div class="surface">
           <div class="surface-header">
             <div>
-              <h2 class="surface-title">Tài liệu lưu hành tại thư viện</h2>
-              <p class="surface-subtitle">Yêu cầu đặt mượn được tiếp nhận qua RabbitMQ và kiểm tra số bản tự động bởi Worker.</p>
+              <h2 class="surface-title">Danh mục sách &amp; số bản khả dụng</h2>
+              <p class="surface-subtitle">Gửi yêu cầu đặt mượn bất đồng bộ qua RabbitMQ, Worker tự động kiểm tra tồn kho và giữ sách.</p>
             </div>
             <div class="pill-switch">
               <button class="pill-option active" id="filterBookAll" onclick="app.setBookAvailFilter(false)">Tất cả</button>
@@ -110,16 +117,21 @@
           </div>
         </div>
 
-        <!-- Cột phải: Phiếu mượn của bạn đọc đang chọn -->
+        <!-- Cột phải: Sách đã đặt & đang mượn của bạn đọc -->
         <div class="surface">
           <div class="surface-header">
             <div>
-              <h2 class="surface-title">Phiếu đặt &amp; sách đang mượn</h2>
+              <h2 class="surface-title">Sách đã đặt &amp; đang mượn của bạn đọc</h2>
               <p class="surface-subtitle" id="readerSubLabel">Đang tải thông tin bạn đọc...</p>
             </div>
-            <div class="pill-switch">
-              <button class="pill-option active" id="filterLoanAll" onclick="app.setUserLoanFilter(false)">Tất cả</button>
-              <button class="pill-option" id="filterLoanActive" onclick="app.setUserLoanFilter(true)">Đang mượn / đặt</button>
+          </div>
+
+          <div class="filter-bar" style="padding:10px 20px;">
+            <div class="pill-switch" id="userLoanSwitch" style="width:100%;justify-content:space-between;">
+              <button class="pill-option active" data-mode="all" onclick="app.setUserLoanMode(this)">Tất cả</button>
+              <button class="pill-option" data-mode="active" onclick="app.setUserLoanMode(this)">Đang đặt / mượn</button>
+              <button class="pill-option" data-mode="Reserved" onclick="app.setUserLoanMode(this)">Đã giữ</button>
+              <button class="pill-option" data-mode="Borrowed" onclick="app.setUserLoanMode(this)">Đang mượn</button>
             </div>
           </div>
 
@@ -135,23 +147,23 @@
       <div class="surface">
         <div class="surface-header">
           <div>
-            <h2 class="surface-title">Sổ theo dõi phiếu đặt mượn toàn hệ thống</h2>
-            <p class="surface-subtitle">Dành cho thủ thư xác nhận giao sách khi bạn đọc đến nhận hoặc thu hồi sách hoàn trả.</p>
+            <h2 class="surface-title">Quản lý vòng đời phiếu đặt mượn</h2>
+            <p class="surface-subtitle">Theo dõi và cập nhật đủ 5 trạng thái: Pending, Reserved, Rejected, Borrowed và Returned.</p>
           </div>
           <div class="pill-switch" id="manageStatusSwitch">
             <button class="pill-option active" data-status="" onclick="app.setManageStatus(this)">Tất cả</button>
-            <button class="pill-option" data-status="Pending" onclick="app.setManageStatus(this)">Chờ duyệt</button>
-            <button class="pill-option" data-status="Reserved" onclick="app.setManageStatus(this)">Đã giữ sách</button>
-            <button class="pill-option" data-status="Borrowed" onclick="app.setManageStatus(this)">Đang mượn</button>
-            <button class="pill-option" data-status="Returned" onclick="app.setManageStatus(this)">Đã trả</button>
-            <button class="pill-option" data-status="Rejected" onclick="app.setManageStatus(this)">Từ chối / Hủy</button>
+            <button class="pill-option" data-status="Pending" onclick="app.setManageStatus(this)">Pending</button>
+            <button class="pill-option" data-status="Reserved" onclick="app.setManageStatus(this)">Reserved</button>
+            <button class="pill-option" data-status="Borrowed" onclick="app.setManageStatus(this)">Borrowed</button>
+            <button class="pill-option" data-status="Returned" onclick="app.setManageStatus(this)">Returned</button>
+            <button class="pill-option" data-status="Rejected" onclick="app.setManageStatus(this)">Rejected</button>
           </div>
         </div>
 
         <div class="filter-bar">
           <div class="search-field">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input type="text" id="manageSearch" class="text-input" placeholder="Lọc theo họ tên bạn đọc, tên sách hoặc mã truy vết Correlation ID..." oninput="app.debounceManage()">
+            <input type="text" id="manageSearch" class="text-input" placeholder="Lọc theo họ tên bạn đọc, tên sách hoặc mã Correlation ID..." oninput="app.debounceManage()">
           </div>
         </div>
 
@@ -159,13 +171,13 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>Mã phiếu</th>
+                <th>Mã phiếu / Correlation ID</th>
                 <th>Bạn đọc</th>
                 <th>Nhan đề sách</th>
                 <th>Trạng thái</th>
                 <th>Ghi chú xử lý</th>
                 <th>Thời gian gửi</th>
-                <th style="text-align:right;">Thao tác</th>
+                <th style="text-align:right;">Thao tác quầy</th>
               </tr>
             </thead>
             <tbody id="manageTableBody">
@@ -176,13 +188,103 @@
       </div>
     </section>
 
-    <!-- TAB 3: DANH SÁCH BẠN ĐỌC -->
+    <!-- TAB 3: GIÁM SÁT HÀNG ĐỢI RABBITMQ & NHẬT KÝ PHÂN TÁN (Theo HUONG-DAN-CHUNG.md) -->
+    <section class="view-pane" id="pane-queues">
+      <div class="queue-cards-row num">
+        <div class="queue-box">
+          <div class="queue-box-label">Hàng đợi chính (library.reservations.queue)</div>
+          <div class="queue-box-val" id="qMainCount">0 bản tin chờ</div>
+          <div class="queue-box-sub" id="qConsumerCount">Số tiến trình Worker đang lắng nghe: 0</div>
+        </div>
+
+        <div class="queue-box">
+          <div class="queue-box-label">Dead Letter Queue (library.reservations.dlq)</div>
+          <div class="queue-box-val" id="qDlqCount">0 bản tin lỗi</div>
+          <div class="queue-box-sub">Cô lập bản tin sai định dạng hoặc vượt quá 3 lần Retry</div>
+        </div>
+
+        <div class="queue-box">
+          <div class="queue-box-label">Cơ chế chịu lỗi &amp; Phục hồi</div>
+          <div class="queue-box-val" style="font-size:18px;margin-top:9px;">Serializable + Sweep 15s</div>
+          <div class="queue-box-sub">Idempotent Consumer · Retry lùi mũ (1s, 2s, 4s)</div>
+        </div>
+      </div>
+
+      <div class="surface">
+        <div class="surface-header">
+          <div>
+            <h2 class="surface-title">Thực nghiệm kiểm chứng hệ thống phân tán &amp; Nhật ký Audit</h2>
+            <p class="surface-subtitle">Minh họa trực tiếp cơ chế chống Overbooking, Idempotent Consumer, Dead Letter Queue và luồng Correlation ID.</p>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="app.loadQueuesAndLogs()">Cập nhật số liệu</button>
+        </div>
+
+        <!-- 3 Khối Thực Nghiệm Trực Tiếp -->
+        <div class="lab-grid">
+          <div class="lab-item">
+            <div>
+              <div class="lab-title">1. Đặt đồng thời chống Overbooking</div>
+              <p class="lab-desc">Gửi song song 5 yêu cầu đặt mượn vào cuốn sách 1 bản để kiểm tra Worker duyệt đúng 1 phiếu và từ chối 4 phiếu.</p>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="app.runLabBurst()">Gửi song song 5 yêu cầu</button>
+          </div>
+
+          <div class="lab-item">
+            <div>
+              <div class="lab-title">2. Kiểm chứng Idempotent Consumer</div>
+              <p class="lab-desc">Phát lặp lại bản tin AMQP của phiếu vừa xử lý gần nhất vào RabbitMQ để chứng minh Worker không trừ kho lần hai.</p>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="app.runLabIdempotent()">Phát lặp lại bản tin đã duyệt</button>
+          </div>
+
+          <div class="lab-item">
+            <div>
+              <div class="lab-title">3. Kiểm chứng Dead Letter Queue (DLQ)</div>
+              <p class="lab-desc">Đẩy thử một gói tin hỏng định dạng JSON vào Exchange để xem Worker cô lập sang hàng đợi <code class="mono">reservations.dlq</code>.</p>
+            </div>
+            <button class="btn btn-danger-quiet btn-sm" onclick="app.runLabPoison()">Gửi gói tin lỗi vào DLQ</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <div class="search-field">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="auditSearch" class="text-input" placeholder="Tìm trong nhật ký theo mã Correlation ID, sự kiện hoặc nội dung..." oninput="app.debounceAudit()">
+          </div>
+
+          <div class="pill-switch" id="auditServiceSwitch">
+            <button class="pill-option active" data-svc="" onclick="app.setAuditService(this)">Mọi thành phần</button>
+            <button class="pill-option" data-svc="Library.API" onclick="app.setAuditService(this)">Library.API</button>
+            <button class="pill-option" data-svc="Library.Worker" onclick="app.setAuditService(this)">Library.Worker</button>
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Thời điểm</th>
+                <th>Thành phần</th>
+                <th>Sự kiện</th>
+                <th>Correlation ID</th>
+                <th>Nội dung chi tiết</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody">
+              <tr><td colspan="5" class="empty-box">Đang tải nhật ký hệ thống...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: DANH SÁCH BẠN ĐỌC -->
     <section class="view-pane" id="pane-members">
       <div class="surface">
         <div class="surface-header">
           <div>
             <h2 class="surface-title">Danh sách thẻ bạn đọc</h2>
-            <p class="surface-subtitle">Quản lý thông tin bạn đọc và chọn tài khoản thao tác đặt mượn.</p>
+            <p class="surface-subtitle">Quản lý thông tin bạn đọc và chọn tài khoản đang thao tác đặt mượn.</p>
           </div>
           <button class="btn btn-dark btn-sm" onclick="app.openSheet('memberSheet')">+ Đăng ký thẻ bạn đọc</button>
         </div>
@@ -190,13 +292,13 @@
       </div>
     </section>
 
-    <!-- TAB 4: TRA CỨU MÃ PHIẾU -->
+    <!-- TAB 5: TRA CỨU MÃ PHIẾU -->
     <section class="view-pane" id="pane-lookup">
       <div class="surface" style="padding: 24px;">
-        <div style="max-width: 660px;">
-          <h2 class="surface-title">Tra cứu chi tiết phiếu đặt mượn</h2>
+        <div style="max-width: 680px;">
+          <h2 class="surface-title">Tra cứu trạng thái yêu cầu đặt mượn (GET /reservations/{id})</h2>
           <p class="surface-subtitle" style="margin-bottom: 14px;">
-            Nhập mã định danh phiếu (GUID) để kiểm tra kết quả xét duyệt từ Worker, mốc thời gian mượn trả và mã Correlation ID.
+            Nhập mã định danh phiếu (GUID) để xem trạng thái xử lý, 4 mốc thời gian, nhật ký luồng đi qua các dịch vụ và JSON gốc.
           </p>
           <div style="display:flex;gap:8px;">
             <input type="text" id="lookupInput" class="text-input plain mono" placeholder="Dán mã GUID của phiếu đặt mượn vào đây...">
@@ -206,7 +308,7 @@
 
         <div id="lookupResult" style="margin-top: 22px;">
           <div class="empty-box" style="border: 1px dashed var(--border); border-radius: var(--radius-md);">
-            Nhấn vào mã phiếu bất kỳ ở danh sách bên ngoài hoặc nhập mã GUID để xem chi tiết.
+            Nhấn vào mã phiếu bất kỳ ở danh sách bên ngoài hoặc nhập mã GUID để xem hành trình xử lý.
           </div>
         </div>
       </div>
@@ -214,13 +316,13 @@
 
   </main>
 
-  <!-- Lớp nền mờ & các ngăn trượt chi tiết -->
+  <!-- Lớp nền mờ & các ngăn trượt -->
   <div class="overlay" id="overlay" onclick="app.closeSheets()"></div>
 
   <!-- Chi tiết đầu sách -->
   <aside class="sheet" id="detailSheet">
     <div class="sheet-header">
-      <h3 class="surface-title">Thông tin đầu sách</h3>
+      <h3 class="surface-title">Chi tiết sách &amp; tồn kho</h3>
       <button class="btn btn-quiet btn-sm" onclick="app.closeSheets()">Đóng</button>
     </div>
     <div class="sheet-body" id="detailSheetBody"></div>
@@ -284,6 +386,34 @@
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
         <button type="button" class="btn btn-outline" onclick="app.closeSheets()">Hủy</button>
         <button type="submit" class="btn btn-dark">Tạo thẻ bạn đọc</button>
+      </div>
+    </form>
+  </aside>
+
+  <!-- Đăng nhập Thủ thư (Authentication / Authorization) -->
+  <aside class="sheet" id="staffSheet">
+    <div class="sheet-header">
+      <h3 class="surface-title">Xác thực Thủ thư trực quầy</h3>
+      <button class="btn btn-quiet btn-sm" onclick="app.closeSheets()">Đóng</button>
+    </div>
+    <form class="sheet-body" onsubmit="app.submitStaffLogin(event)">
+      <p style="margin:0 0 16px;font-size:13px;color:var(--text-secondary);">
+        Đăng nhập để nhận Bearer Token ký HMAC-SHA256 đính kèm vào các thao tác quản trị kho sách và điều phối mượn trả.
+      </p>
+      <div class="form-group">
+        <label for="fStaffUser">Tài khoản thủ thư</label>
+        <input type="text" id="fStaffUser" class="text-input plain mono" value="thuthu" required>
+      </div>
+      <div class="form-group">
+        <label for="fStaffPass">Mật khẩu</label>
+        <input type="password" id="fStaffPass" class="text-input plain mono" value="123456" required>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);background:#fafaf8;padding:10px 12px;border-radius:6px;border:1px solid var(--border);margin-bottom:18px;">
+        Tài khoản mặc định phục vụ demo bảo vệ: <code class="mono">thuthu</code> / <code class="mono">123456</code>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button type="button" class="btn btn-outline" onclick="app.closeSheets()">Hủy</button>
+        <button type="submit" class="btn btn-primary">Đăng nhập</button>
       </div>
     </form>
   </aside>

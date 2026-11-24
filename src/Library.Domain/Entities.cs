@@ -46,6 +46,17 @@ public class Reservation
     public DateTime? ReturnedAt { get; set; }
 }
 
+public class AuditLog
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? ReservationId { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public string ServiceName { get; set; } = string.Empty;
+    public string EventType { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class ReservationRequestedMessage
 {
     public Guid ReservationId { get; set; }
