@@ -13,30 +13,36 @@ public class Worker : BackgroundService
     private readonly ILogger<Worker> _logger;
     private readonly IConfiguration _configuration;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IMessagePublisher _publisher;
     private IConnection? _connection;
     private IModel? _channel;
 
-    public Worker(ILogger<Worker> logger, IConfiguration configuration, IServiceProvider serviceProvider)
+    public Worker(
+        ILogger<Worker> logger,
+        IConfiguration configuration,
+        IServiceProvider serviceProvider,
+        IMessagePublisher publisher)
     {
         _logger = logger;
         _configuration = configuration;
         _serviceProvider = serviceProvider;
+        _publisher = publisher;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Reservation Worker is starting and connecting to RabbitMQ...");
+        _logger.LogInformation("Reservation Worker starting up...");
         return base.StartAsync(cancellationToken);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Retry loop to connect to RabbitMQ
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 InitRabbitMq();
+                SubscribeConsumer(stoppingToken);
                 break;
             }
             catch (Exception ex)
@@ -46,54 +52,201 @@ public class Worker : BackgroundService
             }
         }
 
-        if (stoppingToken.IsCancellationRequested) return;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (_connection is not { IsOpen: true } || _channel is not { IsOpen: true })
+                {
+                    _logger.LogWarning("RabbitMQ consumer channel disconnected. Reconnecting...");
+                    InitRabbitMq();
+                    SubscribeConsumer(stoppingToken);
+                }
 
+                await RecoverStalePendingReservationsAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Background recovery loop warning: {Message}", ex.Message);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+        }
+    }
+
+    private void SubscribeConsumer(CancellationToken stoppingToken)
+    {
         var consumer = new AsyncEventingBasicConsumer(_channel);
-        consumer.Received += async (model, ea) =>
+        consumer.Received += async (_, ea) =>
         {
             var body = ea.Body.ToArray();
             var json = Encoding.UTF8.GetString(body);
             var correlationId = ea.BasicProperties.CorrelationId ?? "Unknown";
+            var retryCount = GetRetryCount(ea.BasicProperties);
 
-            _logger.LogInformation("[CorrelationId: {CorrelationId}] Received message: {Json}", correlationId, json);
-
-            bool success = false;
-            try
+            using (_logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId }))
             {
-                var message = JsonSerializer.Deserialize<ReservationRequestedMessage>(json);
-                if (message != null)
+                _logger.LogInformation(
+                    "[CorrelationId: {CorrelationId}] Consumed message (Attempt {Attempt}/{MaxAttempts}): {Json}",
+                    correlationId, retryCount + 1, RabbitMqConstants.MaxRetryCount + 1, json);
+
+                ReservationRequestedMessage? message = null;
+                try
                 {
-                    success = await ProcessReservationAsync(message, correlationId);
+                    message = JsonSerializer.Deserialize<ReservationRequestedMessage>(json);
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[CorrelationId: {CorrelationId}] Error while processing message", correlationId);
-            }
+                catch (JsonException jsonEx)
+                {
+                    _logger.LogError(
+                        jsonEx,
+                        "[CorrelationId: {CorrelationId}] Malformed JSON payload. Routing poison message directly to DLQ.",
+                        correlationId);
+                    _channel?.BasicReject(deliveryTag: ea.DeliveryTag, requeue: false);
+                    return;
+                }
 
-            if (success)
-            {
-                _channel?.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
-            }
-            else
-            {
-                // Reject message; route to DLQ if max retries exceeded or dead-letter configured
-                _channel?.BasicReject(deliveryTag: ea.DeliveryTag, requeue: false);
-                _logger.LogWarning("[CorrelationId: {CorrelationId}] Message rejected and sent to Dead Letter Queue.", correlationId);
+                if (message is null || message.ReservationId == Guid.Empty)
+                {
+                    _logger.LogWarning(
+                        "[CorrelationId: {CorrelationId}] Invalid message payload (missing ReservationId). Routing to DLQ.",
+                        correlationId);
+                    _channel?.BasicReject(deliveryTag: ea.DeliveryTag, requeue: false);
+                    return;
+                }
+
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var reservationService = scope.ServiceProvider.GetRequiredService<IReservationService>();
+                    var result = await reservationService.ProcessReservationAsync(message, correlationId, stoppingToken);
+
+                    if (result.Outcome == ReservationProcessOutcome.NotFound)
+                    {
+                        await HandleRetryOrDeadLetterAsync(ea.DeliveryTag, message, correlationId, retryCount, "Reservation record not found", stoppingToken);
+                        return;
+                    }
+
+                    _channel?.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "[CorrelationId: {CorrelationId}] Transient error processing Reservation {ReservationId}",
+                        correlationId, message.ReservationId);
+
+                    await HandleRetryOrDeadLetterAsync(ea.DeliveryTag, message, correlationId, retryCount, ex.Message, stoppingToken);
+                }
             }
         };
 
-        _channel.BasicConsume(queue: RabbitMqConstants.ReservationQueueName, autoAck: false, consumer: consumer);
-        _logger.LogInformation("Worker subscribed to queue: {Queue}. Waiting for messages...", RabbitMqConstants.ReservationQueueName);
+        _channel!.BasicConsume(
+            queue: RabbitMqConstants.ReservationQueueName,
+            autoAck: false,
+            consumer: consumer);
 
-        while (!stoppingToken.IsCancellationRequested)
+        _logger.LogInformation(
+            "Worker subscribed to queue '{Queue}' (DLQ: '{Dlq}'). Waiting for reservation requests...",
+            RabbitMqConstants.ReservationQueueName,
+            RabbitMqConstants.DeadLetterQueueName);
+    }
+
+    private async Task HandleRetryOrDeadLetterAsync(
+        ulong deliveryTag,
+        ReservationRequestedMessage message,
+        string correlationId,
+        int currentRetryCount,
+        string reason,
+        CancellationToken ct)
+    {
+        if (currentRetryCount < RabbitMqConstants.MaxRetryCount)
         {
-            await Task.Delay(1000, stoppingToken);
+            var nextRetry = currentRetryCount + 1;
+            var delaySeconds = Math.Pow(2, currentRetryCount);
+            _logger.LogWarning(
+                "[CorrelationId: {CorrelationId}] Scheduling retry {NextRetry}/{MaxRetries} after {Delay}s ({Reason})",
+                correlationId, nextRetry, RabbitMqConstants.MaxRetryCount, delaySeconds, reason);
+
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds), ct);
+            await _publisher.PublishAsync(
+                RabbitMqConstants.ExchangeName,
+                RabbitMqConstants.ReservationRoutingKey,
+                message,
+                correlationId,
+                nextRetry);
+
+            _channel?.BasicAck(deliveryTag: deliveryTag, multiple: false);
         }
+        else
+        {
+            _channel?.BasicReject(deliveryTag: deliveryTag, requeue: false);
+            _logger.LogError(
+                "[CorrelationId: {CorrelationId}] Max retries ({MaxRetries}) exceeded ({Reason}). Message routed to Dead Letter Queue '{Dlq}'.",
+                correlationId, RabbitMqConstants.MaxRetryCount, reason, RabbitMqConstants.DeadLetterQueueName);
+        }
+    }
+
+    private async Task RecoverStalePendingReservationsAsync(CancellationToken ct)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
+        var reservationService = scope.ServiceProvider.GetRequiredService<IReservationService>();
+
+        var cutoff = DateTime.UtcNow.AddSeconds(-15);
+        var stalePending = await db.Reservations
+            .AsNoTracking()
+            .Where(r => r.Status == ReservationStatus.Pending && r.CreatedAt <= cutoff)
+            .OrderBy(r => r.CreatedAt)
+            .Take(20)
+            .ToListAsync(ct);
+
+        foreach (var pending in stalePending)
+        {
+            var corrId = pending.CorrelationId ?? $"recovery-{Guid.NewGuid():N}";
+            _logger.LogInformation(
+                "[CorrelationId: {CorrelationId}] Recovering stale Pending reservation {ReservationId} created at {CreatedAt}",
+                corrId, pending.Id, pending.CreatedAt);
+
+            var msg = new ReservationRequestedMessage
+            {
+                ReservationId = pending.Id,
+                BookId = pending.BookId,
+                UserId = pending.UserId,
+                RequestedAt = pending.CreatedAt,
+                CorrelationId = corrId
+            };
+
+            await reservationService.ProcessReservationAsync(msg, corrId, ct);
+        }
+    }
+
+    private static int GetRetryCount(IBasicProperties? props)
+    {
+        if (props?.Headers is null || !props.Headers.TryGetValue(RabbitMqConstants.RetryHeaderName, out var raw) || raw is null)
+        {
+            return 0;
+        }
+
+        return raw switch
+        {
+            int i => i,
+            long l => (int)l,
+            byte b => b,
+            sbyte sb => sb,
+            byte[] bytes when int.TryParse(Encoding.UTF8.GetString(bytes), out var parsed) => parsed,
+            _ => 0
+        };
     }
 
     private void InitRabbitMq()
     {
+        _channel?.Dispose();
+        _connection?.Dispose();
+
         var factory = new ConnectionFactory
         {
             HostName = _configuration["RabbitMQ:Host"] ?? "localhost",
@@ -101,18 +254,19 @@ public class Worker : BackgroundService
             UserName = _configuration["RabbitMQ:UserName"] ?? "guest",
             Password = _configuration["RabbitMQ:Password"] ?? "guest",
             DispatchConsumersAsync = true,
-            AutomaticRecoveryEnabled = true
+            AutomaticRecoveryEnabled = true,
+            NetworkRecoveryInterval = TimeSpan.FromSeconds(5)
         };
 
         _connection = factory.CreateConnection();
         _channel = _connection.CreateModel();
 
-        // Ensure DLX and DLQ
+        // Ensure Dead Letter Exchange & Queue
         _channel.ExchangeDeclare(RabbitMqConstants.DeadLetterExchangeName, ExchangeType.Direct, durable: true);
         _channel.QueueDeclare(RabbitMqConstants.DeadLetterQueueName, durable: true, exclusive: false, autoDelete: false);
         _channel.QueueBind(RabbitMqConstants.DeadLetterQueueName, RabbitMqConstants.DeadLetterExchangeName, RabbitMqConstants.DeadLetterRoutingKey);
 
-        // Ensure Main exchange and queue
+        // Ensure Main Exchange & Queue
         _channel.ExchangeDeclare(RabbitMqConstants.ExchangeName, ExchangeType.Direct, durable: true);
         var queueArgs = new Dictionary<string, object>
         {
@@ -123,66 +277,6 @@ public class Worker : BackgroundService
         _channel.QueueBind(RabbitMqConstants.ReservationQueueName, RabbitMqConstants.ExchangeName, RabbitMqConstants.ReservationRoutingKey);
 
         _channel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-    }
-
-    private async Task<bool> ProcessReservationAsync(ReservationRequestedMessage message, string correlationId)
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
-
-        // Idempotency check: Tra cứu yêu cầu đặt mượn
-        var reservation = await db.Reservations.Include(r => r.Book).FirstOrDefaultAsync(r => r.Id == message.ReservationId);
-        if (reservation == null)
-        {
-            _logger.LogWarning("[CorrelationId: {CorrelationId}] Reservation {ReservationId} not found in database.", correlationId, message.ReservationId);
-            return false;
-        }
-
-        // Nếu trạng thái đã được xử lý trước đó (Idempotent handling)
-        if (reservation.Status != ReservationStatus.Pending)
-        {
-            _logger.LogInformation("[CorrelationId: {CorrelationId}] Reservation {ReservationId} already processed with status {Status}. Skipping.", correlationId, reservation.Id, reservation.Status);
-            return true;
-        }
-
-        var book = reservation.Book ?? await db.Books.FindAsync(message.BookId);
-        if (book == null)
-        {
-            reservation.Status = ReservationStatus.Rejected;
-            reservation.ReasonMessage = "Không tìm thấy thông tin sách trong hệ thống.";
-            reservation.ProcessedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
-            return true;
-        }
-
-        // Kiểm tra số bản khả dụng
-        _logger.LogInformation("[CorrelationId: {CorrelationId}] Checking availability for book '{Title}'. Available copies: {Available}",
-            correlationId, book.Title, book.AvailableCopies);
-
-        if (book.AvailableCopies > 0)
-        {
-            // Trừ số bản và xác nhận giữ sách (Reserved)
-            book.AvailableCopies -= 1;
-            reservation.Status = ReservationStatus.Reserved;
-            reservation.ReasonMessage = "Đã xác nhận đặt trước sách thành công. Vui lòng đến nhận sách.";
-            reservation.ProcessedAt = DateTime.UtcNow;
-
-            _logger.LogInformation("[CorrelationId: {CorrelationId}] Reservation APPROVED for ReservationId {ReservationId}. Remaining copies: {Remaining}",
-                correlationId, reservation.Id, book.AvailableCopies);
-        }
-        else
-        {
-            // Không đủ sách -> Từ chối (Rejected)
-            reservation.Status = ReservationStatus.Rejected;
-            reservation.ReasonMessage = "Hết sách khả dụng. Yêu cầu đặt mượn đã bị từ chối.";
-            reservation.ProcessedAt = DateTime.UtcNow;
-
-            _logger.LogWarning("[CorrelationId: {CorrelationId}] Reservation REJECTED for ReservationId {ReservationId}. No copies available.",
-                correlationId, reservation.Id);
-        }
-
-        await db.SaveChangesAsync();
-        return true;
     }
 
     public override void Dispose()
