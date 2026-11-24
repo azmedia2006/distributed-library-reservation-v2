@@ -11,7 +11,7 @@
 </p>
 
 > **Học phần:** Phát triển ứng dụng phân tán  
-> **Đề tài số 20:** Hệ thống thư viện và đặt mượn sách phân tán (Xử lý hàng đợi bất đồng bộ với RabbitMQ, chống Overbooking, kiến trúc vi dịch vụ & Docker).
+> **Đề tài số 20:** Hệ thống thư viện và đặt mượn sách phân tán (Xử lý hàng đợi bất đồng bộ với RabbitMQ, Retry + Dead Letter Queue, tự phục hồi đơn `Pending`, chống Overbooking, kiến trúc phân tách dịch vụ & Docker Compose).
 
 ---
 
@@ -32,16 +32,19 @@
 ## 1. Tổng Quan Bài Toán & Giải Pháp
 
 Trong các hệ thống quản lý mượn sách truyền thống, các giao dịch kiểm tra số bản còn lại và lưu đơn thường được thực hiện **đồng bộ (synchronous)** trực tiếp vào Database. Khi lưu lượng độc giả truy cập tăng vọt:
-- **Race Condition & Overbooking:** Nhiều bạn đọc cùng đặt 1 cuốn sách cuối cùng, dẫn đến tình trạng kho bị âm hoặc quá tải.
-- **Database Bottleneck:** Khóa dòng (Row locks) gây nghẽn toàn bộ dịch vụ tra cứu sách.
+- **Race Condition & Overbooking:** Nhiều bạn đọc cùng đặt cuốn sách cuối cùng dẫn đến kho bị âm hoặc dữ liệu không nhất quán.
+- **Database Bottleneck:** Khóa dòng (row locks) gây nghẽn toàn bộ dịch vụ tra cứu sách.
 
 **Giải pháp phân tán áp dụng trong dự án:**
-1. **Tiếp nhận tức thì (Non-blocking):** Client gửi yêu cầu -> API lưu trạng thái sơ bộ `Pending` -> Trả về `202 Accepted` ngay cho người dùng mà không cần chờ khóa dữ liệu.
-2. **Xếp hàng tin cậy qua Message Broker:** Đẩy thông điệp vào RabbitMQ (sử dụng Direct Exchange).
-3. **Background Worker Service:** Tiêu thụ thông điệp theo thứ tự, kiểm tra số lượng bản khả dụng trong Database:
-   - Nếu `AvailableCopies > 0`: Trừ 1 bản, phê duyệt đơn `Reserved`.
-   - Nếu `AvailableCopies == 0`: Từ chối đơn `Rejected` kèm thông báo lý do rõ ràng.
-4. **Vòng đời mượn - trả:** Hỗ trợ chuyển trạng thái sang `Borrowed` khi đến nhận sách và tự động hoàn lại (+1) số bản khả dụng khi trả sách `Returned`.
+1. **Tiếp nhận tức thì (Non-blocking):** Client gửi yêu cầu -> API lưu trạng thái sơ bộ `Pending` kèm mã truy vết `CorrelationId` -> Trả về `202 Accepted` ngay lập tức.
+2. **Xếp hàng tin cậy qua Message Broker:** Đẩy thông điệp bền vững (`Persistent`) vào RabbitMQ thông qua Direct Exchange `library.exchange`.
+3. **Background Worker Service & Chống Overbooking:** Tiêu thụ thông điệp theo thứ tự trong giao dịch cô lập (`Serializable`), kiểm tra số bản khả dụng (`AvailableCopies`) trong PostgreSQL:
+   - Nếu `AvailableCopies > 0`: Trừ 1 bản, phê duyệt đơn sang `Reserved`.
+   - Nếu `AvailableCopies == 0`: Từ chối đơn sang `Rejected` kèm thông báo lý do rõ ràng.
+4. **Chịu lỗi & Tự phục hồi (Resilience):**
+   - **Retry lùi mũ + Dead Letter Queue:** Thử lại tối đa 3 lần (`x-retry-count`) trước khi cô lập tin nhắn lỗi vào `library.reservations.dlq`.
+   - **Pending Recovery Sweep:** Ngay cả khi RabbitMQ tạm thời gián đoạn lúc tiếp nhận đơn, Worker định kỳ quét và xử lý bù các đơn `Pending` tồn đọng, đảm bảo không bao giờ thất lạc yêu cầu.
+5. **Vòng đời mượn - trả - hủy khép kín:** Hỗ trợ nhận sách (`Borrowed`), trả sách (`Returned` — tự động hoàn `+1` bản khả dụng) và hủy đơn đặt trước (`Cancel` — tự động giải phóng bản đang giữ chỗ).
 
 ---
 
@@ -50,18 +53,18 @@ Trong các hệ thống quản lý mượn sách truyền thống, các giao d�
 ```mermaid
 graph TD
     subgraph "Clients Layer"
-        WebClient["Web Client (SPA)<br/>Port: 8088"]
-        ConsoleClient["Console Client (CLI)<br/>Menu 8 chức năng"]
+        WebClient["Web Client SPA & Reverse Proxy<br/>Port: 8088"]
+        ConsoleClient["Console Client CLI<br/>9 chức năng & Burst Test"]
     end
 
-    subgraph "API Gateway / Server Layer"
-        API["⚡ Library API (.NET 10 Minimal API)<br/>Port: 5005<br/>Swagger UI & Health Checks"]
+    subgraph "API Layer"
+        API["Library API (.NET 10 Minimal API)<br/>Port: 5005<br/>Swagger UI, Correlation ID & Health Check"]
     end
 
     subgraph "Messaging & Background Processing"
         RabbitMQ["RabbitMQ Message Broker<br/>Port: 5672 / 15672 (UI)<br/>Exchange: library.exchange"]
-        DLQ["Dead Letter Queue<br/>library.reservations.dlq"]
-        Worker["Reservation Worker Service<br/>Background Consumer<br/>Idempotent & Resilient"]
+        DLQ["Dead Letter Exchange & Queue<br/>library.exchange.dlx -> library.reservations.dlq"]
+        Worker["Reservation Worker Service<br/>Idempotent Consumer + Retry (x3)<br/>+ Pending Recovery Sweep"]
     end
 
     subgraph "Persistence Storage Layer"
@@ -70,11 +73,11 @@ graph TD
 
     WebClient -->|HTTP / JSON| API
     ConsoleClient -->|HTTP / JSON| API
-    API -->|1. Lưu Pending| Postgres
-    API -->|2. Publish Message with CorrelationID| RabbitMQ
-    RabbitMQ -->|Direct Routing| Worker
-    RabbitMQ -.->|Reject / Poison Message| DLQ
-    Worker -->|3. Check Inventory & Approve/Reject| Postgres
+    API -->|1. Lưu Pending + CorrelationId| Postgres
+    API -->|2. Publish Persistent Message| RabbitMQ
+    RabbitMQ -->|Async Consume| Worker
+    Worker -.->|Retry > 3 / Poison Message| DLQ
+    Worker -->|3. Serializable Tx: Check & Update Copies| Postgres
 ```
 
 ---
@@ -86,236 +89,192 @@ sequenceDiagram
     autonumber
     actor User as Bạn Đọc
     participant Web as Web Client (Port 8088)
-    participant API as ⚡ Library API (Port 5005)
+    participant API as Library API (Port 5005)
     participant RMQ as RabbitMQ Exchange
     participant Worker as Reservation Worker
     participant DB as PostgreSQL (Port 5432)
 
-    User->>Web: Nhấn "Đặt mượn sách"
+    User->>Web: Nhấn "Đặt mượn ngay" (hoặc Test Đồng Thời x3)
     Web->>API: POST /reservations { bookId, userId }
-    API->>DB: Tạo đơn mới trạng thái [Pending]
-    API->>RMQ: Publish ReservationRequestedMessage (kèm CorrelationId)
-    API-->>Web: HTTP 202 Accepted { reservationId, correlationId }
-    Web-->>User: Hiển thị "Đã tiếp nhận vào hàng đợi xử lý..."
+    API->>DB: Tạo đơn trạng thái [Pending] kèm CorrelationId
+    API->>RMQ: Publish ReservationRequestedMessage
+    API-->>Web: HTTP 202 Accepted { id, correlationId, status: "Pending" }
+    Web-->>User: Hiển thị mã đơn & tự động theo dõi trạng thái
 
-    Note over RMQ,Worker: Bất đồng bộ (Asynchronous Queue Delivery)
-    RMQ->>Worker: Consume Reservation Message
-    Worker->>DB: Kiểm tra số bản khả dụng (AvailableCopies)
-    alt Số bản khả dụng > 0
-        Worker->>DB: Giảm AvailableCopies - 1
-        Worker->>DB: Cập nhật trạng thái đơn [Reserved]
-        Worker->>RMQ: BasicAck (Xác nhận hoàn thành)
-    else Hết sách khả dụng (= 0)
-        Worker->>DB: Cập nhật trạng thái đơn [Rejected] ("Hết sách")
-        Worker->>RMQ: BasicAck (Xác nhận từ chối)
+    Note over RMQ,Worker: Xử lý bất đồng bộ (Asynchronous Queue Delivery)
+    RMQ->>Worker: Consume Message (x-retry-count)
+    Worker->>DB: Giao dịch kiểm tra Idempotency & AvailableCopies
+    alt AvailableCopies > 0
+        Worker->>DB: AvailableCopies - 1, cập nhật [Reserved]
+        Worker->>RMQ: BasicAck
+    else AvailableCopies == 0
+        Worker->>DB: Cập nhật [Rejected] ("Hết sách khả dụng")
+        Worker->>RMQ: BasicAck
     end
 
-    User->>Web: Xem lịch sử / Tra cứu đơn
-    Web->>API: GET /reservations/{id} hoặc GET /users/{userId}/reservations
-    API->>DB: Truy vấn dữ liệu mới nhất
-    DB-->>API: Trả về trạng thái đã duyệt
-    API-->>Web: JSON kết quả
-    Web-->>User: Cập nhật UI: Đã giữ sách [Reserved]
+    Web->>API: Tự động Poll GET /users/{userId}/reservations
+    API->>DB: Truy vấn trạng thái mới nhất
+    API-->>Web: Trả về kết quả [Reserved] / [Rejected]
+    Web-->>User: Cập nhật trực tiếp tồn kho & trạng thái phiếu mượn
 ```
 
 ---
 
 ## 4. Công Nghệ & Điểm Nhấn Kỹ Thuật Nâng Cao
 
-Hệ thống được thiết kế đáp ứng toàn bộ các yêu cầu cơ bản và các nội dung mở rộng theo quy định:
+Hệ thống đáp ứng đầy đủ các yêu cầu bắt buộc của **Đề tài 20** và toàn bộ các yêu cầu mở rộng trong `HUONG-DAN-CHUNG.md`:
 
 | Kỹ thuật | Chi tiết áp dụng trong dự án |
 | :--- | :--- |
-| **.NET 10 & Minimal API** | Tối ưu hóa hiệu năng, giảm overhead, code gọn gàng, tích hợp Swagger UI và CORS. |
-| **Message Queue & Direct Exchange** | Mô hình bất đồng bộ với hàng đợi RabbitMQ, tách rời hoàn toàn quá trình tiếp nhận và xử lý mượn sách. |
-| **Dead Letter Queue (DLQ)** | Cấu hình DLX `library.dlx.exchange` và queue `library.reservations.dlq` để cách ly và xử lý tin nhắn lỗi. |
-| **Correlation ID Tracking** | Gắn mã UUID định danh xuyên suốt từ Client -> API -> RabbitMQ -> Worker -> Logs hệ thống. |
-| **Idempotent Consumer** | Worker kiểm tra trạng thái trước khi trừ kho để loại trừ nguy cơ xử lý trùng thông điệp (At-least-once delivery). |
-| **Health Check Endpoint** | Cung cấp endpoint `/health` theo dõi tình trạng sống còn của hệ thống. |
-| **Internal Reverse Proxy** | Web Client tích hợp sẵn proxy nội bộ giúp loại bỏ 100% lỗi CORS và lỗi lệch cổng khi chạy trên máy chủ/môi trường khác nhau. |
-| **Automated Testing** | Bộ kiểm thử tự động với xUnit và EntityFramework InMemory bao phủ đầy đủ các case nghiệp vụ. |
+| **.NET 10 & Minimal API** | Tách biệt rõ `Domain`, `Infrastructure` (`ReservationService`), `API`, `Worker`, `WebClient` và `ConsoleClient`. |
+| **RabbitMQ Thread-Safe Publisher** | Đồng bộ khóa kênh AMQP đa luồng, hỗ trợ bắn hàng loạt request song song (Burst Concurrency) an toàn tuyệt đối. |
+| **Retry + Dead Letter Queue (DLQ)** | Thử lại tối đa 3 lần với độ trễ tăng theo cấp số nhân (`1s`, `2s`, `4s`) qua header `x-retry-count`; vượt ngưỡng tự động chuyển sang `library.reservations.dlq`. |
+| **Pending Outbox Recovery** | Worker tự động quét và xử lý bù các bản ghi `Pending` quá hạn nếu RabbitMQ tạm thời gián đoạn lúc tiếp nhận. |
+| **Correlation ID Middleware** | Gắn và phản hồi header `X-Correlation-ID` xuyên suốt từ HTTP Request -> Database -> RabbitMQ -> Worker Logs -> Giao diện người dùng. |
+| **Idempotent & Serializable Transaction** | Kiểm tra trạng thái đơn trước khi trừ kho kết hợp giao dịch `Serializable` ngăn chặn triệt để xử lý trùng và Race Condition. |
+| **Live Component Health Check** | Endpoint `/health` kiểm tra kết nối thực tế tới cả **PostgreSQL** và **RabbitMQ**, hiển thị đèn trạng thái trực tiếp trên thanh điều hướng Web. |
+| **Internal Reverse Proxy & 2-Tab Portal** | Web Client tích hợp proxy nội bộ loại bỏ lỗi CORS, cung cấp đồng thời **Cổng Bạn Đọc** và **Cổng Quản Trị Thủ Thư**. |
+| **Real Service Automated Testing** | 8 kịch bản Unit Test (`xUnit` + EF Core InMemory) kiểm thử trực tiếp `ReservationService`. |
 
 ---
 
 ## 5. Cấu Trúc Mã Nguồn Thư Mục
 
 ```text
-distributed-library-reservation
-├── 20-he-thong-thu-vien-dat-muon-sach.md  # Yêu cầu chi tiết đề tài 20
-├── HUONG-DAN-CHUNG.md                     # Hướng dẫn chung của học phần
+distributed-library-reservation-v2
+├── 20-he-thong-thu-vien-dat-muon-sach.md  # Đề bài chi tiết Đề tài 20
+├── HUONG-DAN-CHUNG.md                     # Yêu cầu kỹ thuật chung của học phần
 ├── BAO-CAO-BAI-TAP-LON.md                 # Quyển báo cáo bài tập lớn hoàn chỉnh
 ├── LibraryDistributedSystem.slnx          # Solution file .NET 10
-├── docker-compose.yml                     # File khởi chạy toàn bộ 5 dịch vụ
-├── README.md                              # Hướng dẫn chi tiết
+├── docker-compose.yml                     # Khởi chạy trọn gói 5 container qua Docker network
+├── start-windows.bat / stop-windows.bat   # Script 1-click khởi chạy / dừng nhanh trên Windows
+├── run-console-windows.bat                # Script mở nhanh Console Client trên Windows
 ├── src/
-│   ├── Library.Domain/                    # Domain Entities (Book, User, Reservation) & Messages
-│   ├── Library.Infrastructure/            # EF Core DbContext, RabbitMQ Publisher & Constants
-│   ├── Library.API/                       # Minimal API, Swagger UI, Health Check
-│   ├── Library.Worker/                    # Background Service lắng nghe & xử lý Message từ RabbitMQ
-│   ├── Library.WebClient/                 # Giao diện Web Client & Reverse Proxy API
-│   └── Library.ConsoleClient/             # Giao diện Console Client (CLI App)
+│   ├── Library.Domain/                    # Thực thể Book, User, Reservation & Message Contract
+│   ├── Library.Infrastructure/            # LibraryDbContext, ReservationService, RabbitMqPublisher
+│   ├── Library.API/                       # Minimal API, Correlation ID Middleware, Swagger, Health Check
+│   ├── Library.Worker/                    # Background Consumer, Retry + DLQ & Pending Recovery
+│   ├── Library.WebClient/                 # Giao diện Web SPA 2 phân hệ & Internal Reverse Proxy
+│   └── Library.ConsoleClient/             # Ứng dụng CLI 9 chức năng kèm công cụ Burst Test
 └── tests/
-    └── Library.Tests/                     # Bộ kiểm thử Unit Test & Nghiệp vụ (xUnit)
+    └── Library.Tests/                     # 8 Unit Tests kiểm thử nghiệp vụ ReservationService
 ```
 
 ---
 
 ## 6. Hướng Dẫn Cài Đặt & Vận Hành
 
----
-
 ### Hướng Dẫn Dành Cho Windows
 
-### Hướng Dẫn Dành Cho Windows
+#### Cách 1: Khởi chạy nhanh 1-Click bằng file `.bat` (Khuyến nghị)
+1. Mở và đợi **Docker Desktop for Windows** chuyển sang trạng thái sẵn sàng (Running).
+2. Nhấp đúp vào các tệp kịch bản tại thư mục gốc:
+   - **`start-windows.bat`**: Tự động kiểm tra Docker, build toàn bộ 5 dịch vụ, chạy ngầm và mở trình duyệt tới Web Client (`http://localhost:8088`).
+   - **`stop-windows.bat`**: Dừng toàn bộ container và giải phóng tài nguyên.
+   - **`run-console-windows.bat`**: Khởi chạy ứng dụng dòng lệnh Console Client.
 
-#### Cách 1: Khởi Chạy Nhanh 1-Click Bằng File `.bat` (Siêu tiện lợi & Nhanh nhất)
-1. Đảm bảo **Docker Desktop for Windows** đang được mở và chạy (biểu tượng cá voi màu xanh).
-2. Click đúp chuột vào file:
-   - **`start-windows.bat`**: Script sẽ tự động kiểm tra Docker, build toàn bộ 5 dịch vụ, khởi chạy hệ thống ngầm và **tự động mở trình duyệt Web Client** (`http://localhost:8088`).
-   - **`stop-windows.bat`**: Dừng nhanh toàn bộ hệ thống và giải phóng tài nguyên RAM/CPU.
-   - **`run-console-windows.bat`**: Mở nhanh giao diện Console CLI tương tác bằng dòng lệnh.
+#### Cách 2: Khởi chạy bằng lệnh Docker Compose
+```powershell
+git clone https://github.com/azmedia2006/distributed-library-reservation-v2.git
+cd distributed-library-reservation-v2
+docker compose up -d --build
+docker compose ps
+```
+- **Web Client (Bạn đọc & Quản trị):** http://localhost:8088
+- **Library API Swagger UI:** http://localhost:5005/swagger
+- **Health Check JSON:** http://localhost:5005/health
+- **RabbitMQ Management UI:** http://localhost:15672 *(Tài khoản: `guest` / `guest`)*
 
----
+Khi cần dừng hệ thống:
+```powershell
+docker compose down
+```
 
-#### Cách 2: Khởi chạy bằng lệnh Docker Compose (PowerShell / Command Prompt)
-1. **Cài đặt trước:** Đảm bảo máy tính đã cài đặt và đang chạy **Docker Desktop for Windows**.
-2. **Khởi chạy:**
-   - Mở **PowerShell** hoặc **Command Prompt (CMD)**, di chuyển vào thư mục dự án:
-     ```powershell
-     cd "đường_dẫn_tới_thư_mục\ứng dụng phân tán"
-     ```
-   - Khởi chạy toàn bộ hệ thống bằng 1 câu lệnh duy nhất:
-     ```powershell
-     docker compose up -d --build
-     ```
-   - Kiểm tra các container đang hoạt động:
-     ```powershell
-     docker compose ps
-     ```
-3. **Mở trình duyệt truy cập:**
-   - **Giao diện Web Client:** [http://localhost:8088](http://localhost:8088)
-   - **Swagger API Docs:** [http://localhost:5005/swagger](http://localhost:5005/swagger)
-   - **RabbitMQ Dashboard:** [http://localhost:15672](http://localhost:15672) *(Tài khoản: `guest` / `guest`)*
-4. **Tắt hệ thống:**
-   ```powershell
-   docker compose down
-   ```
-
-#### Cách 2: Chạy trực tiếp từ mã nguồn (.NET SDK trên Windows)
-1. Cài đặt **.NET 10 SDK** từ trang chủ Microsoft.
-2. Dùng Docker để bật database PostgreSQL và RabbitMQ:
+#### Cách 3: Chạy trực tiếp từ mã nguồn với .NET 10 SDK
+1. Khởi chạy hạ tầng PostgreSQL và RabbitMQ bằng Docker:
    ```powershell
    docker compose up -d postgres-db rabbitmq
    ```
-3. Mở 3 cửa sổ PowerShell / Terminal riêng biệt để chạy từng service:
-   - **Terminal 1 (Library API):**
-     ```powershell
-     dotnet run --project src\Library.API
-     ```
-   - **Terminal 2 (Reservation Worker):**
-     ```powershell
-     dotnet run --project src\Library.Worker
-     ```
-   - **Terminal 3 (Web Client hoặc Console Client):**
-     ```powershell
-     # Chạy Web Client:
-     dotnet run --project src\Library.WebClient
-     
-     # HOẶC Chạy Console Client tương tác dòng lệnh:
-     dotnet run --project src\Library.ConsoleClient
-     ```
+2. Mở các cửa sổ Terminal riêng biệt để chạy từng tiến trình (cấu hình cổng `5005` và `8088` đã được đồng bộ sẵn):
+   ```powershell
+   # Terminal 1 - Library API (Port 5005)
+   dotnet run --project src\Library.API
+
+   # Terminal 2 - Reservation Worker
+   dotnet run --project src\Library.Worker
+
+   # Terminal 3 - Web Client (Port 8088) hoặc Console Client
+   dotnet run --project src\Library.WebClient
+   # Hoặc:
+   dotnet run --project src\Library.ConsoleClient
+   ```
 
 ---
 
 ### Hướng Dẫn Dành Cho Ubuntu / Linux
 
-#### Cách 1: Chạy tự động trọn gói bằng Docker Compose (Khuyến nghị số 1)
-1. **Kiểm tra Docker Compose:**
-   ```bash
-   docker compose version
-   ```
-2. **Khởi chạy hệ thống:**
-   ```bash
-   # Di chuyển vào thư mục dự án
-   cd "/đường_dẫn_tới_thư_mục/ứng dụng phân tán"
+```bash
+git clone https://github.com/azmedia2006/distributed-library-reservation-v2.git
+cd distributed-library-reservation-v2
 
-   # Build và khởi chạy background
-   docker compose up -d --build
-   ```
-3. **Kiểm tra trạng thái & theo dõi Logs:**
-   ```bash
-   # Xem các container đang chạy
-   docker compose ps
+# Build và khởi chạy toàn bộ 5 container
+docker compose up -d --build
 
-   # Xem logs xử lý của Worker & API theo thời gian thực
-   docker compose logs -f library-api reservation-worker
-   ```
-4. **Truy cập dịch vụ:**
-   - **Giao diện Web:** [http://localhost:8088](http://localhost:8088)
-   - **Swagger UI:** [http://localhost:5005/swagger](http://localhost:5005/swagger)
-   - **RabbitMQ Manager:** [http://localhost:15672](http://localhost:15672)
-5. **Dừng hệ thống:**
-   ```bash
-   docker compose down
-   ```
-
-#### Cách 2: Chạy trực tiếp từ mã nguồn (.NET SDK trên Ubuntu)
-1. Cài đặt **.NET 10 SDK** trên Ubuntu:
-   ```bash
-   sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0
-   ```
-2. Khởi chạy 2 service hạ tầng PostgreSQL và RabbitMQ qua Docker:
-   ```bash
-   docker compose up -d postgres-db rabbitmq
-   ```
-3. Mở các tab terminal riêng biệt và chạy từng dịch vụ:
-   - **Cửa sổ 1 (API):** `dotnet run --project src/Library.API`
-   - **Cửa sổ 2 (Worker):** `dotnet run --project src/Library.Worker`
-   - **Cửa sổ 3 (Web Client):** `dotnet run --project src/Library.WebClient`
-   - **Cửa sổ 4 (Console CLI):** `dotnet run --project src/Library.ConsoleClient`
+# Theo dõi log xử lý bất đồng bộ kèm CorrelationId theo thời gian thực
+docker compose logs -f library-api reservation-worker
+```
 
 ---
 
 ## 7. Danh Sách RESTful API & Swagger
 
-| Phương thức | Endpoint | Mô tả | Mã phản hồi |
+| Phương thức | Endpoint | Mô tả chức năng | Mã phản hồi |
 | :---: | :--- | :--- | :---: |
-| `GET` | `/books` | Lấy danh sách toàn bộ sách trong thư viện | `200 OK` |
-| `GET` | `/books/{id}` | Lấy thông tin chi tiết và số bản khả dụng của sách | `200 OK`, `404 Not Found` |
-| `POST` | `/reservations` | Tiếp nhận yêu cầu đặt mượn sách, đẩy vào RabbitMQ | `202 Accepted` |
-| `GET` | `/reservations/{id}` | Tra cứu trạng thái yêu cầu đặt mượn theo ID | `200 OK`, `404 Not Found` |
-| `GET` | `/users/{userId}/reservations` | Tra cứu lịch sử đặt/mượn sách của một bạn đọc | `200 OK`, `404 Not Found` |
-| `PUT` | `/reservations/{id}/status` | Cập nhật nhận sách (`Borrowed`) hoặc trả sách (`Returned`) | `200 OK`, `400 Bad Request` |
-| `GET` | `/users` | Lấy danh sách bạn đọc mẫu để thử nghiệm | `200 OK` |
-| `GET` | `/health` | Kiểm tra tình trạng hoạt động của dịch vụ (Health Check) | `200 OK` |
+| `GET` | `/books` | Tra cứu danh sách sách (`?search=...&availableOnly=true`) | `200 OK` |
+| `GET` | `/books/{id}` | Chi tiết đầu sách, số bản khả dụng và thống kê đơn đang giữ/mượn | `200 OK`, `404` |
+| `POST` | `/books` | Thêm đầu sách mới vào kho thư viện | `201 Created` |
+| `PUT` | `/books/{id}` | Cập nhật thông tin sách và điều chỉnh tổng số bản (`TotalCopies`) | `200 OK`, `400` |
+| `POST` | `/reservations` | Tiếp nhận yêu cầu đặt mượn (`Pending`), đẩy vào RabbitMQ | `202 Accepted` |
+| `GET` | `/reservations` | Danh sách toàn bộ đơn đặt mượn trong hệ thống (`?status=...&search=...`) | `200 OK` |
+| `GET` | `/reservations/{id}` | Tra cứu chi tiết trạng thái xử lý và `CorrelationId` của đơn | `200 OK`, `404` |
+| `GET` | `/users/{userId}/reservations` | Tra cứu sách đang đặt/mượn (`?activeOnly=true`) hoặc lịch sử bạn đọc | `200 OK`, `404` |
+| `PUT` | `/reservations/{id}/status` | Cập nhật nhận sách (`Borrowed`) hoặc trả sách (`Returned`, hoàn `+1` bản) | `200 OK`, `400` |
+| `POST` | `/reservations/{id}/cancel` | Hủy đơn đang `Pending` hoặc `Reserved` (hoàn lại bản sách nếu đã giữ) | `200 OK`, `400` |
+| `GET` | `/users` | Danh sách bạn đọc trong hệ thống | `200 OK` |
+| `POST` | `/users` | Đăng ký thẻ bạn đọc mới | `201 Created` |
+| `GET` | `/stats` | Số liệu thống kê tổng hợp cho Dashboard | `200 OK` |
+| `GET` | `/health` | Kiểm tra kết nối thực tế tới PostgreSQL và RabbitMQ | `200 OK` |
 
 ---
 
 ## 8. Hướng Dẫn Kiểm Thử Tự Động & Kịch Bản Demo
 
-### 8.1. Chạy bộ kiểm thử tự động (Unit Test)
-Dự án được viết sẵn 4 test case chuyên sâu kiểm tra toàn diện nghiệp vụ đặt mượn:
+### 8.1. Chạy bộ kiểm thử tự động (Unit Tests)
 ```bash
 dotnet test
 ```
-**Kết quả kiểm thử:**
-- `ProcessReservation_WhenBookAvailable_ShouldReserveAndDecreaseCopies`
-- `ProcessReservation_WhenBookOutOfStock_ShouldRejectReservation`
-- `UpdateStatus_ToReturned_ShouldIncreaseAvailableCopies`
-- `ProcessReservation_Idempotency_ShouldNotDeductTwice`
+Bộ 8 kịch bản kiểm thử trong `tests/Library.Tests/ReservationProcessingTests.cs` bao phủ:
+1. `ProcessReservation_WhenBookAvailable_ShouldReserveAndDecreaseCopies`
+2. `ProcessReservation_WhenBookOutOfStock_ShouldRejectReservation`
+3. `ProcessReservation_Idempotency_DuplicateMessageShouldNotDeductTwice`
+4. `UpdateStatus_FromReservedToBorrowed_ShouldSucceed`
+5. `UpdateStatus_FromBorrowedToReturned_ShouldRestoreAvailableCopiesUpToTotal`
+6. `UpdateStatus_InvalidTransition_PendingToBorrowed_ShouldReturnFailure`
+7. `CancelReservation_WhenReserved_ShouldRestoreAvailableCopyAndMarkRejected`
+8. `ProcessReservation_BurstRequestsForSingleCopy_ShouldApproveExactlyOneAndRejectRest`
 
-### 8.2. Kịch bản minh họa khi thuyết trình (Demo Flow)
-1. **Bước 1:** Mở Web Client tại [http://localhost:8088](http://localhost:8088) (hoặc mở Console Client).
-2. **Bước 2:** Chọn bạn đọc (ví dụ: *Nguyễn Văn An*).
-3. **Bước 3:** Bấm nút **Đặt mượn** cho một cuốn sách còn bản khả dụng.
-   - Quan sát log của Worker: Worker nhận thông điệp, kiểm tra số sách > 0 -> duyệt đơn sang `Reserved` và trừ số bản còn lại đi 1.
-4. **Bước 4:** Bạn đọc đến nhận sách -> Bấm **Nhận sách (Borrowed)** -> Trạng thái chuyển thành `Borrowed`.
-5. **Bước 5:** Bạn đọc mang sách trả lại -> Bấm **Trả sách (Returned)** -> Trạng thái chuyển thành `Returned`, số bản khả dụng tự động tăng lại 1.
-6. **Bước 6 (Chống Overbooking):** Tiếp tục đặt sách đến khi số bản = 0. Đặt thêm 1 yêu cầu mới -> Worker tự động từ chối với thông báo `Rejected` ("Hết sách khả dụng").
+### 8.2. Kịch bản minh họa trực tiếp khi bảo vệ (Live Demo Flow)
+1. **Kiểm tra trạng thái hệ thống:** Mở http://localhost:8088 — quan sát 2 đèn `PostgreSQL: Online` và `RabbitMQ: Online` cùng bảng thống kê KPI trên đầu trang.
+2. **Tra cứu & Xem chi tiết sách:** Tìm cuốn *"Building Microservices"* (có sẵn **1 bản khả dụng**), nhấn **Chi tiết & Tồn kho** để xem dữ liệu từ `GET /books/{id}`.
+3. **Demo chống Overbooking 1-Click:** Nhấn nút **`Test Đồng Thời (x3)`** ngay trên cuốn sách 1 bản đó:
+   - Web Client bắn song song 3 request `POST /reservations`, cả 3 đều nhận `202 Accepted` tức thì.
+   - `Reservation Worker` lần lượt rút từng thông điệp từ RabbitMQ: **duyệt đúng 1 đơn sang `Reserved`** (tồn kho về `0/1`) và **tự động từ chối 2 đơn còn lại sang `Rejected`** (*"Hết sách khả dụng"*). Kho sách tuyệt đối không bị âm!
+4. **Demo vòng đời Nhận sách - Trả sách:** Nhấn **Nhận sách (`Borrowed`)** để chuyển đơn sang đang mượn, sau đó nhấn **Trả sách (`Returned`)** -> số bản khả dụng tự động tăng trở lại lên `1/1`.
+5. **Demo Cổng Quản Trị Thủ Thư:** Chuyển sang tab **Quản Trị Thư Viện & Giám Sát Hàng Đợi** để lọc đơn theo trạng thái, tra cứu theo `CorrelationId` hoặc thêm đầu sách mới.
 
 ---
 
 <p align="center">
   <b>Học phần Phát triển ứng dụng phân tán • Đề tài 20</b><br/>
-  <i>Được xây dựng với C#, .NET 10, RabbitMQ, Worker Service, PostgreSQL & Docker Compose.</i>
+  <i>Xây dựng với C#, .NET 10 Minimal API, RabbitMQ, Background Worker, PostgreSQL 16 & Docker Compose.</i>
 </p>
