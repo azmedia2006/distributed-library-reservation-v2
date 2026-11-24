@@ -3,431 +3,1343 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hệ Thống Thư Viện &amp; Đặt Mượn Sách Phân Tán</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <title>LibraQueue — Hệ Thống Thư Viện Phân Tán</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
     :root {
-      --brand-dark: #0f172a;
-      --brand-accent: #2563eb;
-      --border-soft: #e2e8f0;
+      --bg-canvas: #fafafa;
+      --bg-surface: #ffffff;
+      --bg-subtle: #f4f4f5;
+      --bg-hover: #f4f4f5;
+      --border: #e4e4e7;
+      --border-strong: #d4d4d8;
+      --text-main: #09090b;
+      --text-secondary: #3f3f46;
+      --text-muted: #71717a;
+      --text-faint: #a1a1aa;
+      --accent: #18181b;
+      --accent-hover: #27272a;
+      --blue: #2563eb;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #e11d48;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --shadow-xs: 0 1px 2px rgba(9, 9, 11, 0.04);
+      --shadow-md: 0 8px 24px -4px rgba(9, 9, 11, 0.08), 0 2px 6px -1px rgba(9, 9, 11, 0.04);
+      --shadow-drawer: -12px 0 36px rgba(9, 9, 11, 0.1);
     }
-    body {
-      background-color: #f8fafc;
-      color: #1e293b;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    }
-    .navbar {
-      background-color: var(--brand-dark);
-      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
-    }
-    .card {
-      border: 1px solid var(--border-soft);
-      border-radius: 10px;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-    }
-    .card-header {
-      background-color: #ffffff;
-      border-bottom: 1px solid var(--border-soft);
-      font-weight: 600;
-    }
-    .kpi-card {
-      background: #ffffff;
-      border: 1px solid var(--border-soft);
-      border-radius: 10px;
-      padding: 0.9rem 1.1rem;
+
+    html, body {
+      margin: 0;
+      padding: 0;
       height: 100%;
+      background: var(--bg-canvas);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13.5px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
-    .kpi-value {
-      font-size: 1.5rem;
-      font-weight: 700;
+
+    .mono {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tabular { font-variant-numeric: tabular-nums; }
+
+    /* App Shell */
+    .app-shell {
+      display: grid;
+      grid-template-columns: 256px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 18px 14px;
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px 8px 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .brand-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-weight: 600;
+      font-size: 14px;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
       line-height: 1.2;
-      color: #0f172a;
     }
-    .kpi-label {
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      color: #64748b;
+
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .version-tag {
+      font-size: 10.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bg-subtle);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    /* Active Reader Switcher in Sidebar */
+    .reader-box {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 10px;
+      margin-bottom: 18px;
+    }
+
+    .reader-box-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 7px;
+    }
+
+    .section-eyebrow {
+      font-size: 11px;
       font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
     }
-    .book-item {
-      background-color: #ffffff;
-      border: 1px solid var(--border-soft);
-      border-radius: 8px;
-      padding: 1rem;
-      margin-bottom: 0.75rem;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .book-item:hover {
-      border-color: #94a3b8;
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-    }
-    .badge-status {
-      font-weight: 600;
-      font-size: 0.75rem;
-      padding: 0.3rem 0.6rem;
-      border-radius: 999px;
-      display: inline-block;
-    }
-    .status-Pending { background-color: #fef3c7; color: #92400e; }
-    .status-Reserved { background-color: #dbeafe; color: #1e40af; }
-    .status-Rejected { background-color: #fee2e2; color: #991b1b; }
-    .status-Borrowed { background-color: #dcfce7; color: #166534; }
-    .status-Returned { background-color: #e2e8f0; color: #334155; }
-    .health-pill {
-      font-size: 0.75rem;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background-color: #1e293b;
-      color: #cbd5e1;
-      border: 1px solid #334155;
-    }
-    .health-dot {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      margin-right: 5px;
-    }
-    .dot-ok { background-color: #22c55e; }
-    .dot-err { background-color: #ef4444; }
-    .nav-tabs .nav-link {
-      color: #475569;
-      font-weight: 600;
+
+    .link-btn {
+      background: none;
       border: none;
-      border-bottom: 2px solid transparent;
-      padding: 0.65rem 1.1rem;
+      padding: 0;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
-    .nav-tabs .nav-link.active {
-      color: var(--brand-accent);
+
+    .link-btn:hover { color: var(--text-main); }
+
+    .reader-select-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #18181b;
+      color: #fff;
+      font-size: 10.5px;
+      font-weight: 600;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    .select-clean {
+      width: 100%;
+      appearance: none;
+      background-color: var(--bg-surface);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 26px 6px 9px;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .select-clean:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    /* Navigation */
+    .nav-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex: 1;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      border: none;
       background: transparent;
-      border-bottom: 2px solid var(--brand-accent);
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      text-align: left;
     }
-    .mono-code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.75rem;
+
+    .nav-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-main);
+    }
+
+    .nav-btn.active {
+      background: var(--bg-subtle);
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    .nav-btn-left {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .nav-count {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    /* Telemetry Footer */
+    .telemetry-box {
+      border-top: 1px solid var(--border);
+      padding: 14px 8px 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .telemetry-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-faint);
+    }
+
+    .dot.online {
+      background: var(--emerald);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
+    }
+
+    .dot.offline {
+      background: var(--rose);
+      box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.14);
+    }
+
+    .dot.pulse {
+      background: var(--amber);
+      animation: pulseAnim 1.2s infinite ease-in-out;
+    }
+
+    @keyframes pulseAnim {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+
+    /* Main Workspace */
+    .workspace {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 15;
+      background: rgba(250, 250, 250, 0.86);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .page-heading h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .page-heading p {
+      margin: 2px 0 0;
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #ffffff;
+      box-shadow: var(--shadow-xs);
+    }
+
+    .btn-primary:hover { background: var(--accent-hover); }
+
+    .btn-secondary {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      border-color: var(--border);
+      box-shadow: var(--shadow-xs);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-subtle);
+      border-color: var(--border-strong);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      border-color: transparent;
+    }
+
+    .btn-ghost:hover {
+      background: var(--bg-subtle);
+      color: var(--text-main);
+    }
+
+    .btn-subtle-danger {
+      background: #fff1f2;
+      color: #be123c;
+      border-color: #fecdd3;
+    }
+
+    .btn-subtle-danger:hover { background: #ffe4e6; }
+
+    .btn-sm {
+      height: 27px;
+      padding: 0 9px;
+      font-size: 12px;
+    }
+
+    /* Content Container */
+    .content-wrap {
+      padding: 22px 28px 48px;
+      max-width: 1380px;
+      width: 100%;
+    }
+
+    /* Unified KPI Metric Strip */
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-xs);
+      margin-bottom: 22px;
+      overflow: hidden;
+    }
+
+    .metric-cell {
+      padding: 16px 20px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .metric-cell:last-child { border-right: none; }
+
+    .metric-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .metric-val {
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      color: var(--text-main);
+      margin: 6px 0 4px;
+    }
+
+    .metric-foot {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .meter-track {
+      width: 100%;
+      height: 4px;
+      background: var(--bg-subtle);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .meter-fill {
+      height: 100%;
+      background: var(--text-main);
+      border-radius: 999px;
+      transition: width 0.3s ease;
+    }
+
+    /* Views */
+    .view-section { display: none; }
+    .view-section.active { display: block; }
+
+    /* Split Grid for Catalog + Live Queue */
+    .catalog-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-xs);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-main);
+    }
+
+    /* Filter Toolbar */
+    .toolbar {
+      padding: 10px 18px;
+      background: var(--bg-canvas);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .search-box {
+      position: relative;
+      flex: 1;
+      min-width: 210px;
+    }
+
+    .search-box svg {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-faint);
+      pointer-events: none;
+    }
+
+    .input-clean {
+      width: 100%;
+      height: 32px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0 10px 0 32px;
+      font-family: inherit;
+      font-size: 12.5px;
+      color: var(--text-main);
+      transition: border-color 0.15s;
+    }
+
+    .input-clean.no-icon { padding-left: 10px; }
+
+    .input-clean:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .kbd-hint {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10.5px;
+      padding: 1px 5px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-faint);
+      background: var(--bg-canvas);
+      pointer-events: none;
+    }
+
+    /* Segmented Toggle */
+    .segmented {
+      display: inline-flex;
+      background: var(--bg-subtle);
+      padding: 2px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+
+    .seg-btn {
+      border: none;
+      background: transparent;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+
+    .seg-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      box-shadow: var(--shadow-xs);
+    }
+
+    /* Book Rows */
+    .book-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .book-row {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      transition: background 0.12s;
+    }
+
+    .book-row:last-child { border-bottom: none; }
+    .book-row:hover { background: #fcfcfd; }
+
+    .book-meta-left {
+      display: flex;
+      gap: 12px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .spine-bar {
+      width: 3px;
+      border-radius: 3px;
+      align-self: stretch;
+      min-height: 44px;
+      flex-shrink: 0;
+    }
+
+    .spine-ok { background: var(--emerald); }
+    .spine-low { background: var(--amber); }
+    .spine-empty { background: #e4e4e7; }
+
+    .book-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-main);
+      margin-bottom: 2px;
+      cursor: pointer;
+    }
+
+    .book-title:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+    .book-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .book-desc {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      margin: 0 0 10px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .stock-strip {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+    }
+
+    .stock-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .mini-bar {
+      width: 64px;
+      height: 4px;
+      background: var(--bg-subtle);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .mini-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+    }
+
+    .book-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* Status Chip */
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 500;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .chip-Pending { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+    .chip-Reserved { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .chip-Borrowed { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .chip-Returned { background: #f4f4f5; color: #3f3f46; border-color: #e4e4e7; }
+    .chip-Rejected { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+
+    .chip-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Queue / Personal Reservations Feed */
+    .feed-list {
+      max-height: 580px;
+      overflow-y: auto;
+    }
+
+    .feed-item {
+      padding: 13px 18px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.12s;
+    }
+
+    .feed-item:last-child { border-bottom: none; }
+    .feed-item:hover { background: #fcfcfd; }
+
+    .feed-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .feed-book {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text-main);
+    }
+
+    .feed-msg {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin: 4px 0 6px;
+    }
+
+    .feed-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .trace-link {
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-bottom: 1px dashed var(--border-strong);
+      cursor: pointer;
+    }
+
+    .trace-link:hover { color: var(--blue); border-bottom-color: var(--blue); }
+
+    /* Data Table (Librarian View) */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table.clean-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .clean-table th {
+      padding: 10px 16px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-canvas);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .clean-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      font-size: 12.5px;
+    }
+
+    .clean-table tr:last-child td { border-bottom: none; }
+    .clean-table tbody tr:hover { background: #fcfcfd; }
+
+    /* Trace Timeline Stepper */
+    .timeline-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .step-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      background: var(--bg-canvas);
+      position: relative;
+    }
+
+    .step-card.done {
+      background: var(--bg-surface);
+      border-color: var(--text-main);
+    }
+
+    .step-card.rejected {
+      background: #fff1f2;
+      border-color: #fda4af;
+    }
+
+    .step-num {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .step-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text-main);
+    }
+
+    .step-time {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* Slide-over Drawer & Modal Backdrop */
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(9, 9, 11, 0.35);
+      backdrop-filter: blur(2px);
+      z-index: 50;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease;
+    }
+
+    .backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(440px, 100vw);
+      height: 100vh;
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border);
+      box-shadow: var(--shadow-drawer);
+      z-index: 60;
+      transform: translateX(100%);
+      transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .drawer.open { transform: translateX(0); }
+
+    .drawer-head {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .drawer-body {
+      padding: 20px 22px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .drawer-foot {
+      padding: 14px 22px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-canvas);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 5px;
+    }
+
+    textarea.input-clean {
+      height: auto;
+      padding: 8px 10px;
+      resize: vertical;
+    }
+
+    /* Floating Toast Stack */
+    .toast-stack {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 90;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 380px;
+    }
+
+    .toast-card {
+      background: #18181b;
+      color: #fafafa;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      font-size: 12.5px;
+      line-height: 1.45;
+      border: 1px solid #27272a;
+      animation: slideUp 0.2s ease-out;
+    }
+
+    .toast-card.error {
+      background: #881337;
+      border-color: #9f1239;
+    }
+
+    .toast-card code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.12);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .empty-state {
+      padding: 36px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12.5px;
+    }
+
+    /* Responsive */
+    @media (max-width: 1080px) {
+      .catalog-layout { grid-template-columns: 1fr; }
+      .metric-strip { grid-template-columns: repeat(2, 1fr); }
+      .metric-cell:nth-child(2) { border-right: none; }
+      .metric-cell:nth-child(1), .metric-cell:nth-child(2) { border-bottom: 1px solid var(--border); }
+      .timeline-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 780px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar {
+        position: static;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .topbar, .content-wrap { padding-left: 16px; padding-right: 16px; }
+      .timeline-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 
-<nav class="navbar navbar-dark py-2 mb-3">
-  <div class="container d-flex flex-wrap justify-content-between align-items-center gap-2">
-    <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold fs-5 mb-0" href="#">
-      <i class="bi bi-journal-bookmark-fill text-primary"></i>
-      Thư Viện Phân Tán
-    </a>
-    <div class="d-flex flex-wrap align-items-center gap-2">
-      <span id="healthBadgeDb" class="health-pill">
-        <span class="health-dot dot-ok"></span>PostgreSQL: Đang kiểm tra
-      </span>
-      <span id="healthBadgeMq" class="health-pill">
-        <span class="health-dot dot-ok"></span>RabbitMQ: Đang kiểm tra
-      </span>
-      <button class="btn btn-outline-light btn-sm py-0 px-2" style="font-size: 0.78rem;" onclick="refreshAll()">
-        <i class="bi bi-arrow-clockwise me-1"></i>Đồng bộ
+<div class="app-shell">
+  <!-- LEFT SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-left">
+        <div class="brand-mark">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">LibraQueue</div>
+          <div class="brand-sub">Distributed Library</div>
+        </div>
+      </div>
+      <span class="version-tag mono">v2.1</span>
+    </div>
+
+    <!-- Active Reader Switcher -->
+    <div class="reader-box">
+      <div class="reader-box-header">
+        <span class="section-eyebrow">PHIÊN BẠN ĐỌC</span>
+        <button class="link-btn" onclick="openDrawer('userDrawer')">+ Tạo thẻ</button>
+      </div>
+      <div class="reader-select-wrap">
+        <div class="avatar" id="readerInitials">BD</div>
+        <select id="userSelect" class="select-clean" onchange="onReaderChanged()">
+          <option value="">Đang tải...</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="nav-list">
+      <button class="nav-btn active" id="nav-catalog" onclick="switchView('catalog')">
+        <span class="nav-btn-left">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+          Kho sách &amp; Đặt mượn
+        </span>
+        <span class="nav-count mono" id="navBookCount">0</span>
       </button>
-    </div>
-  </div>
-</nav>
 
-<div class="container pb-5">
-  <div id="alertBox"></div>
-
-  <!-- KPI Stats Strip -->
-  <div class="row g-3 mb-4">
-    <div class="col-6 col-lg-3">
-      <div class="kpi-card">
-        <div class="kpi-label"><i class="bi bi-bookshelf me-1 text-primary"></i>Kho Sách Thư Viện</div>
-        <div class="kpi-value mt-1" id="statBooks">0</div>
-        <div class="text-muted small" id="statCopiesSub">Tổng 0 cuốn sách</div>
-      </div>
-    </div>
-    <div class="col-6 col-lg-3">
-      <div class="kpi-card">
-        <div class="kpi-label"><i class="bi bi-check2-circle me-1 text-success"></i>Bản Sách Khả Dụng</div>
-        <div class="kpi-value mt-1 text-success" id="statAvailable">0</div>
-        <div class="text-muted small" id="statBorrowedSub">0 cuốn đang giữ/mượn</div>
-      </div>
-    </div>
-    <div class="col-6 col-lg-3">
-      <div class="kpi-card">
-        <div class="kpi-label"><i class="bi bi-bookmark-check me-1 text-info"></i>Đang Giữ &amp; Đang Mượn</div>
-        <div class="kpi-value mt-1 text-primary" id="statActiveOrders">0</div>
-        <div class="text-muted small" id="statActiveSub">0 Reserved · 0 Borrowed</div>
-      </div>
-    </div>
-    <div class="col-6 col-lg-3">
-      <div class="kpi-card">
-        <div class="kpi-label"><i class="bi bi-diagram-3 me-1 text-warning"></i>Hàng Đợi &amp; Lịch Sử</div>
-        <div class="kpi-value mt-1" id="statTotalOrders">0</div>
-        <div class="text-muted small" id="statQueueSub">0 Pending · 0 Returned · 0 Rejected</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Navigation Tabs -->
-  <ul class="nav nav-tabs mb-4" role="tablist">
-    <li class="nav-item" role="presentation">
-      <button class="nav-link active" id="reader-tab" data-bs-toggle="tab" data-bs-target="#readerPane" type="button" role="tab">
-        <i class="bi bi-person-workspace me-1"></i>Cổng Bạn Đọc (Tra Cứu &amp; Đặt Mượn)
+      <button class="nav-btn" id="nav-operations" onclick="switchView('operations')">
+        <span class="nav-btn-left">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Điều phối quầy thư viện
+        </span>
+        <span class="nav-count mono" id="navOrderCount">0</span>
       </button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="admin-tab" data-bs-toggle="tab" data-bs-target="#adminPane" type="button" role="tab" onclick="loadAllReservations()">
-        <i class="bi bi-shield-check me-1"></i>Quản Trị Thư Viện &amp; Giám Sát Hàng Đợi
+
+      <button class="nav-btn" id="nav-trace" onclick="switchView('trace')">
+        <span class="nav-btn-left">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          Tra cứu vận đơn &amp; Trace
+        </span>
       </button>
-    </li>
-  </ul>
+    </nav>
 
-  <div class="tab-content">
-    <!-- TAB 1: READER PORTAL -->
-    <div class="tab-pane fade show active" id="readerPane" role="tabpanel">
-      <!-- Reader selection bar -->
-      <div class="card mb-4">
-        <div class="card-body py-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
-          <div class="d-flex flex-wrap align-items-center gap-2">
-            <label for="userSelect" class="form-label mb-0 fw-semibold text-secondary small">
-              <i class="bi bi-person-badge me-1"></i>Bạn đọc thao tác:
-            </label>
-            <select id="userSelect" class="form-select form-select-sm" style="min-width: 280px;" onchange="loadUserReservations()">
-              <option value="">Đang tải danh sách bạn đọc...</option>
-            </select>
-            <button class="btn btn-outline-primary btn-sm" onclick="openUserModal()">
-              <i class="bi bi-person-plus me-1"></i>Thêm bạn đọc
-            </button>
-          </div>
-          <div class="text-muted small">
-            <i class="bi bi-lightning-charge text-warning me-1"></i>Mọi yêu cầu đặt mượn trả về <code>202 Accepted</code> và xử lý bất đồng bộ qua <strong>RabbitMQ</strong>.
-          </div>
-        </div>
+    <!-- Live Infrastructure Telemetry -->
+    <div class="telemetry-box">
+      <div class="section-eyebrow" style="margin-bottom:2px;">HẠ TẦNG PHÂN TÁN</div>
+      <div class="telemetry-row">
+        <span>PostgreSQL 16</span>
+        <span class="status-indicator" id="telDb"><span class="dot"></span>Đang kiểm tra</span>
       </div>
-
-      <div class="row g-4">
-        <!-- Left column: Book Catalog -->
-        <div class="col-lg-7">
-          <div class="card h-100">
-            <div class="card-header py-3">
-              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                <span><i class="bi bi-collection me-2 text-primary"></i>Danh mục sách thư viện</span>
-                <span id="bookCountBadge" class="badge bg-secondary">0 đầu sách</span>
-              </div>
-              <div class="row g-2 align-items-center">
-                <div class="col-sm-8">
-                  <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
-                    <input type="text" id="bookSearchInput" class="form-control" placeholder="Tìm theo tên sách, tác giả hoặc ISBN..." oninput="debouncedLoadBooks()">
-                    <button class="btn btn-outline-secondary" type="button" onclick="clearBookSearch()">Xóa</button>
-                  </div>
-                </div>
-                <div class="col-sm-4">
-                  <div class="form-check form-switch mb-0 ms-sm-2">
-                    <input class="form-check-input" type="checkbox" id="availableOnlyCheck" onchange="loadBooks()">
-                    <label class="form-check-label small fw-normal text-secondary" for="availableOnlyCheck">Chỉ sách còn bản</label>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="card-body p-3">
-              <div id="bookList">
-                <div class="text-center py-4 text-muted">
-                  <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
-                  <p class="mt-2 small">Đang tải danh mục sách...</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right column: User Reservations + ID Lookup -->
-        <div class="col-lg-5">
-          <div class="card mb-4">
-            <div class="card-header py-3">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span><i class="bi bi-receipt-cutoff me-2 text-primary"></i>Sách đã đặt &amp; đang mượn của bạn đọc</span>
-                <span id="pollingIndicator" class="badge bg-warning text-dark d-none">
-                  <span class="spinner-grow spinner-grow-sm me-1" style="width:0.5rem;height:0.5rem;"></span>Đang chờ Worker...
-                </span>
-              </div>
-              <div class="btn-group btn-group-sm w-100" role="group">
-                <input type="radio" class="btn-check" name="userResFilter" id="urfAll" value="all" checked onchange="loadUserReservations()">
-                <label class="btn btn-outline-secondary" for="urfAll">Tất cả lịch sử</label>
-
-                <input type="radio" class="btn-check" name="userResFilter" id="urfActive" value="active" onchange="loadUserReservations()">
-                <label class="btn btn-outline-secondary" for="urfActive">Đang đặt / Đang mượn</label>
-              </div>
-            </div>
-            <div class="card-body p-3" style="max-height: 480px; overflow-y: auto;">
-              <div id="reservationList">
-                <p class="text-muted text-center py-3 small mb-0">Vui lòng chọn bạn đọc để xem danh sách.</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Lookup by Reservation ID -->
-          <div class="card">
-            <div class="card-header py-3">
-              <i class="bi bi-upc-scan me-2 text-primary"></i>Tra cứu trạng thái đơn theo mã (GET /reservations/{id})
-            </div>
-            <div class="card-body p-3">
-              <div class="input-group input-group-sm mb-2">
-                <input type="text" id="lookupIdInput" class="form-control mono-code" placeholder="Nhập hoặc nhấn mã GUID đơn để tra cứu...">
-                <button class="btn btn-primary" onclick="lookupReservation()">Tra cứu</button>
-              </div>
-              <div id="lookupResult"></div>
-            </div>
-          </div>
-        </div>
+      <div class="telemetry-row">
+        <span>RabbitMQ Broker</span>
+        <span class="status-indicator" id="telMq"><span class="dot"></span>Đang kiểm tra</span>
+      </div>
+      <div class="telemetry-row" style="margin-top:4px;">
+        <span class="mono" style="font-size:11px;color:var(--text-faint);">library.exchange</span>
+        <a href="http://localhost:5005/swagger" target="_blank" rel="noopener" style="font-size:11.5px;color:var(--text-secondary);text-decoration:none;">Swagger ↗</a>
       </div>
     </div>
+  </aside>
 
-    <!-- TAB 2: LIBRARIAN / SYSTEM MANAGEMENT -->
-    <div class="tab-pane fade" id="adminPane" role="tabpanel">
-      <div class="card mb-4">
-        <div class="card-header py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-          <span><i class="bi bi-sliders me-2 text-primary"></i>Quản lý kho sách &amp; Điều phối phiếu mượn toàn hệ thống</span>
-          <div class="d-flex gap-2">
-            <button class="btn btn-primary btn-sm" onclick="openBookModal()">
-              <i class="bi bi-plus-circle me-1"></i>Thêm đầu sách mới
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="loadAllReservations()">
-              <i class="bi bi-arrow-clockwise me-1"></i>Tải lại danh sách
-            </button>
+  <!-- MAIN WORKSPACE -->
+  <div class="workspace">
+    <header class="topbar">
+      <div class="page-heading">
+        <h1 id="viewTitle">Kho sách &amp; Đặt mượn bất đồng bộ</h1>
+        <p id="viewSubtitle">Tiếp nhận tức thì HTTP 202 và phân phối xét duyệt tồn kho tuần tự qua RabbitMQ Worker.</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary" onclick="refreshAll()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          Đồng bộ
+        </button>
+        <button class="btn btn-primary" onclick="openDrawer('addBookDrawer')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Nhập đầu sách
+        </button>
+      </div>
+    </header>
+
+    <main class="content-wrap">
+      <!-- Unified Architectural Metric Strip -->
+      <section class="metric-strip">
+        <div class="metric-cell">
+          <div class="metric-label">
+            <span>Đầu sách lưu hành</span>
+            <span class="mono" style="font-size:11px;" id="kpiUsers">0 thẻ</span>
+          </div>
+          <div class="metric-val tabular" id="kpiBooks">0</div>
+          <div class="metric-foot tabular" id="kpiTotalCopies">Tổng cộng 0 bản trong kho</div>
+        </div>
+
+        <div class="metric-cell">
+          <div class="metric-label">
+            <span>Bản sách sẵn sàng</span>
+            <span class="mono" style="font-size:11px;" id="kpiRatio">0%</span>
+          </div>
+          <div class="metric-val tabular" id="kpiAvailable">0</div>
+          <div class="meter-track"><div class="meter-fill" id="kpiMeter" style="width:0%"></div></div>
+        </div>
+
+        <div class="metric-cell">
+          <div class="metric-label">
+            <span>Đang giữ &amp; Đang mượn</span>
+          </div>
+          <div class="metric-val tabular" id="kpiActive">0</div>
+          <div class="metric-foot tabular" id="kpiActiveBreakdown">0 Reserved · 0 Borrowed</div>
+        </div>
+
+        <div class="metric-cell">
+          <div class="metric-label">
+            <span>Lưu lượng hàng đợi</span>
+            <span class="status-indicator" id="queueLiveBadge"><span class="dot online"></span>Ổn định</span>
+          </div>
+          <div class="metric-val tabular" id="kpiTotalReservations">0</div>
+          <div class="metric-foot tabular" id="kpiQueueBreakdown">0 Pending · 0 Returned · 0 Rejected</div>
+        </div>
+      </section>
+
+      <!-- VIEW 1: CATALOG & PERSONAL QUEUE -->
+      <section class="view-section active" id="view-catalog">
+        <div class="catalog-layout">
+          <!-- Left: Book Catalog -->
+          <div class="panel">
+            <div class="panel-head">
+              <span class="panel-title">Danh mục tài liệu</span>
+              <div class="segmented">
+                <button class="seg-btn active" id="segBookAll" onclick="setBookFilter(false)">Tất cả</button>
+                <button class="seg-btn" id="segBookAvail" onclick="setBookFilter(true)">Còn bản khả dụng</button>
+              </div>
+            </div>
+
+            <div class="toolbar">
+              <div class="search-box">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="text" id="bookSearchInput" class="input-clean" placeholder="Tìm theo tên sách, tác giả hoặc mã ISBN..." oninput="debouncedLoadBooks()">
+                <span class="kbd-hint mono">/</span>
+              </div>
+            </div>
+
+            <div class="book-list" id="bookList">
+              <div class="empty-state">Đang tải danh mục sách...</div>
+            </div>
+          </div>
+
+          <!-- Right: Personal Queue & Active Loans -->
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Phiếu đặt &amp; sách mượn của bạn đọc</div>
+                <div style="font-size:11.5px;color:var(--text-muted);" id="activeReaderLabel">Chọn bạn đọc ở thanh trái</div>
+              </div>
+              <div class="segmented">
+                <button class="seg-btn active" id="segUserAll" onclick="setUserOrderFilter(false)">Tất cả</button>
+                <button class="seg-btn" id="segUserActive" onclick="setUserOrderFilter(true)">Đang hiệu lực</button>
+              </div>
+            </div>
+
+            <div class="feed-list" id="userReservationFeed">
+              <div class="empty-state">Chưa có dữ liệu phiếu mượn.</div>
+            </div>
           </div>
         </div>
-        <div class="card-body p-3">
-          <div class="row g-2 mb-3">
-            <div class="col-md-4">
-              <select id="adminStatusFilter" class="form-select form-select-sm" onchange="loadAllReservations()">
-                <option value="">-- Mọi trạng thái xử lý --</option>
-                <option value="Pending">Pending (Đang nằm trong RabbitMQ)</option>
-                <option value="Reserved">Reserved (Đã duyệt giữ sách)</option>
-                <option value="Borrowed">Borrowed (Bạn đọc đang mượn)</option>
-                <option value="Returned">Returned (Đã hoàn trả kho)</option>
-                <option value="Rejected">Rejected (Từ chối / Hết sách / Đã hủy)</option>
-              </select>
-            </div>
-            <div class="col-md-8">
-              <input type="text" id="adminSearchInput" class="form-control form-control-sm" placeholder="Lọc theo tên bạn đọc, tên sách hoặc Correlation ID..." oninput="debouncedLoadAdmin()">
+      </section>
+
+      <!-- VIEW 2: LIBRARIAN OPERATIONS TABLE -->
+      <section class="view-section" id="view-operations">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">Nhật ký điều phối mượn - trả toàn hệ thống</span>
+            <div class="segmented" id="adminSegGroup">
+              <button class="seg-btn active" data-status="" onclick="setAdminStatus(this)">Tất cả</button>
+              <button class="seg-btn" data-status="Pending" onclick="setAdminStatus(this)">Pending</button>
+              <button class="seg-btn" data-status="Reserved" onclick="setAdminStatus(this)">Reserved</button>
+              <button class="seg-btn" data-status="Borrowed" onclick="setAdminStatus(this)">Borrowed</button>
+              <button class="seg-btn" data-status="Returned" onclick="setAdminStatus(this)">Returned</button>
+              <button class="seg-btn" data-status="Rejected" onclick="setAdminStatus(this)">Rejected</button>
             </div>
           </div>
 
-          <div class="table-responsive">
-            <table class="table table-hover align-middle small mb-0">
-              <thead class="table-light">
+          <div class="toolbar">
+            <div class="search-box">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <input type="text" id="adminSearchInput" class="input-clean" placeholder="Lọc theo tên bạn đọc, tên sách hoặc mã Correlation ID..." oninput="debouncedLoadAdmin()">
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="clean-table">
+              <thead>
                 <tr>
                   <th>Mã đơn / Correlation ID</th>
                   <th>Bạn đọc</th>
                   <th>Đầu sách</th>
                   <th>Trạng thái</th>
-                  <th>Ghi chú xử lý của Worker</th>
-                  <th>Thời gian</th>
-                  <th class="text-end">Thao tác quầy</th>
+                  <th>Kết quả xử lý từ Worker</th>
+                  <th>Thời điểm tạo</th>
+                  <th style="text-align:right;">Thao tác quầy</th>
                 </tr>
               </thead>
-              <tbody id="adminReservationTable">
-                <tr><td colspan="7" class="text-center text-muted py-4">Đang tải dữ liệu...</td></tr>
+              <tbody id="adminTableBody">
+                <tr><td colspan="7" class="empty-state">Đang tải dữ liệu...</td></tr>
               </tbody>
             </table>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-</div>
+      </section>
 
-<!-- Modal: Book Detail & Inventory Adjustment -->
-<div class="modal fade" id="bookDetailModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h6 class="modal-title fw-bold"><i class="bi bi-book-half me-2 text-primary"></i>Chi Tiết Đầu Sách (GET /books/{id})</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body" id="bookDetailBody"></div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Add New Book -->
-<div class="modal fade" id="addBookModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <form class="modal-content" onsubmit="submitNewBook(event)">
-      <div class="modal-header">
-        <h6 class="modal-title fw-bold"><i class="bi bi-journal-plus me-2 text-primary"></i>Thêm Đầu Sách Mới Vào Thư Viện</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-2">
-          <label class="form-label small fw-semibold">Tiêu đề sách *</label>
-          <input type="text" id="newBookTitle" class="form-control form-control-sm" required>
-        </div>
-        <div class="row g-2 mb-2">
-          <div class="col-7">
-            <label class="form-label small fw-semibold">Tác giả</label>
-            <input type="text" id="newBookAuthor" class="form-control form-control-sm" placeholder="VD: Leslie Lamport">
+      <!-- VIEW 3: ORDER LIFECYCLE & CORRELATION TRACE -->
+      <section class="view-section" id="view-trace">
+        <div class="panel" style="padding: 22px;">
+          <div style="max-width: 680px;">
+            <div class="panel-title" style="margin-bottom:4px;">Truy vết vòng đời đơn đặt mượn (GET /reservations/{id})</div>
+            <p style="margin:0 0 14px;font-size:12.5px;color:var(--text-muted);">
+              Nhập mã định danh GUID của bất kỳ đơn đặt mượn nào để kiểm tra hành trình từ lúc tiếp nhận qua hàng đợi RabbitMQ cho tới khi hoàn trả.
+            </p>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="lookupIdInput" class="input-clean no-icon mono" placeholder="Ví dụ: 8f1d4b20-9a71-4c2b-9e3d-1b2c3d4e5f60">
+              <button class="btn btn-primary" onclick="lookupReservation()">Kiểm tra hành trình</button>
+            </div>
           </div>
-          <div class="col-5">
-            <label class="form-label small fw-semibold">ISBN</label>
-            <input type="text" id="newBookIsbn" class="form-control form-control-sm" placeholder="978-...">
+
+          <div id="traceResultArea" style="margin-top: 22px;">
+            <div class="empty-state" style="border:1px dashed var(--border);border-radius:var(--radius-md);">
+              Chọn một mã đơn bất kỳ ở danh sách phiếu mượn hoặc dán GUID vào ô trên để hiển thị dòng thời gian.
+            </div>
           </div>
         </div>
-        <div class="mb-2">
-          <label class="form-label small fw-semibold">Tổng số bản nhập kho *</label>
-          <input type="number" id="newBookCopies" class="form-control form-control-sm" value="2" min="1" max="100" required>
-        </div>
-        <div class="mb-0">
-          <label class="form-label small fw-semibold">Mô tả tóm tắt</label>
-          <textarea id="newBookDesc" class="form-control form-control-sm" rows="2"></textarea>
-        </div>
-      </div>
-      <div class="modal-footer py-2">
-        <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Đóng</button>
-        <button type="submit" class="btn btn-primary btn-sm">Lưu đầu sách</button>
-      </div>
-    </form>
+      </section>
+    </main>
   </div>
 </div>
 
-<!-- Modal: Add New User -->
-<div class="modal fade" id="addUserModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <form class="modal-content" onsubmit="submitNewUser(event)">
-      <div class="modal-header">
-        <h6 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2 text-primary"></i>Đăng Ký Thẻ Bạn Đọc Mới</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-2">
-          <label class="form-label small fw-semibold">Họ và tên bạn đọc *</label>
-          <input type="text" id="newUserName" class="form-control form-control-sm" required>
-        </div>
-        <div class="mb-2">
-          <label class="form-label small fw-semibold">Email</label>
-          <input type="email" id="newUserEmail" class="form-control form-control-sm" placeholder="sinhvien@library.edu.vn">
-        </div>
-        <div class="mb-0">
-          <label class="form-label small fw-semibold">Số điện thoại</label>
-          <input type="text" id="newUserPhone" class="form-control form-control-sm" placeholder="090...">
-        </div>
-      </div>
-      <div class="modal-footer py-2">
-        <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Đóng</button>
-        <button type="submit" class="btn btn-primary btn-sm">Tạo thẻ bạn đọc</button>
-      </div>
-    </form>
-  </div>
-</div>
+<!-- BACKDROP -->
+<div class="backdrop" id="backdrop" onclick="closeAllDrawers()"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- SLIDE-OVER DRAWER: BOOK DETAIL & STOCK EDIT -->
+<aside class="drawer" id="bookDetailDrawer">
+  <div class="drawer-head">
+    <span class="panel-title">Thông tin đầu sách &amp; Tồn kho</span>
+    <button class="btn btn-ghost btn-sm" onclick="closeAllDrawers()">Đóng ✕</button>
+  </div>
+  <div class="drawer-body" id="bookDetailContent"></div>
+</aside>
+
+<!-- SLIDE-OVER DRAWER: ADD NEW BOOK -->
+<aside class="drawer" id="addBookDrawer">
+  <div class="drawer-head">
+    <span class="panel-title">Nhập đầu sách mới vào kho</span>
+    <button class="btn btn-ghost btn-sm" onclick="closeAllDrawers()">Đóng ✕</button>
+  </div>
+  <form class="drawer-body" id="addBookForm" onsubmit="submitNewBook(event)">
+    <div class="field">
+      <label>Tiêu đề sách *</label>
+      <input type="text" id="newBookTitle" class="input-clean no-icon" required placeholder="VD: Patterns of Distributed Systems">
+    </div>
+    <div class="field">
+      <label>Tác giả</label>
+      <input type="text" id="newBookAuthor" class="input-clean no-icon" placeholder="VD: Unmesh Joshi">
+    </div>
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:10px;">
+      <div class="field">
+        <label>Mã ISBN</label>
+        <input type="text" id="newBookIsbn" class="input-clean no-icon mono" placeholder="978-013...">
+      </div>
+      <div class="field">
+        <label>Tổng số bản *</label>
+        <input type="number" id="newBookCopies" class="input-clean no-icon tabular" value="2" min="1" max="200" required>
+      </div>
+    </div>
+    <div class="field">
+      <label>Mô tả chuyên môn</label>
+      <textarea id="newBookDesc" class="input-clean" rows="4" placeholder="Tóm tắt nội dung tài liệu..."></textarea>
+    </div>
+    <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:8px;">
+      <button type="button" class="btn btn-secondary" onclick="closeAllDrawers()">Hủy</button>
+      <button type="submit" class="btn btn-primary">Lưu vào danh mục</button>
+    </div>
+  </form>
+</aside>
+
+<!-- SLIDE-OVER DRAWER: ADD NEW READER -->
+<aside class="drawer" id="userDrawer">
+  <div class="drawer-head">
+    <span class="panel-title">Cấp thẻ bạn đọc mới</span>
+    <button class="btn btn-ghost btn-sm" onclick="closeAllDrawers()">Đóng ✕</button>
+  </div>
+  <form class="drawer-body" onsubmit="submitNewUser(event)">
+    <div class="field">
+      <label>Họ và tên bạn đọc *</label>
+      <input type="text" id="newUserName" class="input-clean no-icon" required placeholder="VD: Phạm Minh Khoa">
+    </div>
+    <div class="field">
+      <label>Địa chỉ Email</label>
+      <input type="email" id="newUserEmail" class="input-clean no-icon" placeholder="khoa.pham@library.edu.vn">
+    </div>
+    <div class="field">
+      <label>Số điện thoại liên hệ</label>
+      <input type="text" id="newUserPhone" class="input-clean no-icon mono" placeholder="090...">
+    </div>
+    <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:8px;">
+      <button type="button" class="btn btn-secondary" onclick="closeAllDrawers()">Hủy</button>
+      <button type="submit" class="btn btn-primary">Kích hoạt thẻ</button>
+    </div>
+  </form>
+</aside>
+
+<!-- FLOATING TOAST STACK -->
+<div class="toast-stack" id="toastStack"></div>
+
 <script>
   const API_URL = '/api';
+  let bookAvailableOnly = false;
+  let userActiveOnly = false;
+  let adminStatusFilter = '';
   let searchTimer = null;
   let adminTimer = null;
   let pollTimer = null;
+  let cachedUsers = [];
 
-  function escapeHtml(val) {
+  function esc(val) {
     if (val === null || val === undefined) return '';
     return String(val)
       .replace(/&/g, '&amp;')
@@ -437,206 +1349,287 @@
       .replace(/'/g, '&#39;');
   }
 
-  function fmtTime(iso) {
+  function fmtDate(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? iso : d.toLocaleString('vi-VN');
+    return isNaN(d.getTime()) ? iso : d.toLocaleString('vi-VN', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      day: '2-digit', month: '2-digit', year: 'numeric'
+    });
   }
 
-  function showAlert(msgHtml, type = 'info', autoHide = true) {
-    const alertBox = document.getElementById('alertBox');
-    alertBox.innerHTML = `
-      <div class="alert alert-${type} alert-dismissible fade show py-2 px-3 small shadow-sm" role="alert">
-        ${msgHtml}
-        <button type="button" class="btn-close py-2" data-bs-dismiss="alert"></button>
-      </div>`;
-    if (autoHide) {
-      setTimeout(() => {
-        if (alertBox.innerHTML.includes(msgHtml)) alertBox.innerHTML = '';
-      }, 6000);
+  function getInitials(name) {
+    if (!name) return 'BD';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function toast(htmlMsg, isError = false) {
+    const stack = document.getElementById('toastStack');
+    const el = document.createElement('div');
+    el.className = 'toast-card' + (isError ? ' error' : '');
+    el.innerHTML = htmlMsg;
+    stack.appendChild(el);
+    setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 0.2s';
+      setTimeout(() => el.remove(), 220);
+    }, 4800);
+  }
+
+  // Keyboard shortcut '/' to focus search
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+      e.preventDefault();
+      const input = document.getElementById('bookSearchInput');
+      if (input) input.focus();
     }
+    if (e.key === 'Escape') closeAllDrawers();
+  });
+
+  function switchView(view) {
+    document.querySelectorAll('.view-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`view-${view}`).classList.add('active');
+    document.getElementById(`nav-${view}`).classList.add('active');
+
+    const titles = {
+      catalog: [
+        'Kho sách & Đặt mượn bất đồng bộ',
+        'Tiếp nhận tức thì HTTP 202 và phân phối xét duyệt tồn kho tuần tự qua RabbitMQ Worker.'
+      ],
+      operations: [
+        'Điều phối quầy thư viện',
+        'Quản lý tập trung toàn bộ yêu cầu giữ sách, xác nhận giao sách và thu hồi sách hoàn trả.'
+      ],
+      trace: [
+        'Tra cứu vận đơn & Truy vết phân tán',
+        'Kiểm tra chi tiết bốn chặng xử lý và đối chiếu mã Correlation ID xuyên suốt các dịch vụ.'
+      ]
+    };
+
+    document.getElementById('viewTitle').textContent = titles[view][0];
+    document.getElementById('viewSubtitle').textContent = titles[view][1];
+
+    if (view === 'operations') loadAllReservations();
+  }
+
+  function openDrawer(id) {
+    document.getElementById('backdrop').classList.add('open');
+    document.getElementById(id).classList.add('open');
+  }
+
+  function closeAllDrawers() {
+    document.getElementById('backdrop').classList.remove('open');
+    document.querySelectorAll('.drawer').forEach(d => d.classList.remove('open'));
   }
 
   async function loadHealthAndStats() {
     try {
-      const [healthRes, statsRes] = await Promise.all([
+      const [hRes, sRes] = await Promise.all([
         fetch(`${API_URL}/health`),
         fetch(`${API_URL}/stats`)
       ]);
 
-      if (healthRes.ok) {
-        const h = await healthRes.json();
-        const dbOk = h.database === 'Connected';
-        const mqOk = h.rabbitMq === 'Connected';
-        document.getElementById('healthBadgeDb').innerHTML =
-          `<span class="health-dot ${dbOk ? 'dot-ok' : 'dot-err'}"></span>PostgreSQL: ${dbOk ? 'Online' : 'Offline'}`;
-        document.getElementById('healthBadgeMq').innerHTML =
-          `<span class="health-dot ${mqOk ? 'dot-ok' : 'dot-err'}"></span>RabbitMQ: ${mqOk ? 'Online' : 'Offline'}`;
+      if (hRes.ok) {
+        const h = await hRes.json();
+        const dbUp = h.database === 'Connected';
+        const mqUp = h.rabbitMq === 'Connected';
+        document.getElementById('telDb').innerHTML =
+          `<span class="dot ${dbUp ? 'online' : 'offline'}"></span>${dbUp ? 'Trực tuyến' : 'Mất kết nối'}`;
+        document.getElementById('telMq').innerHTML =
+          `<span class="dot ${mqUp ? 'online' : 'offline'}"></span>${mqUp ? 'Trực tuyến' : 'Mất kết nối'}`;
       }
 
-      if (statsRes.ok) {
-        const s = await statsRes.json();
-        document.getElementById('statBooks').textContent = `${s.totalBooks} đầu sách`;
-        document.getElementById('statCopiesSub').textContent = `Tổng ${s.totalCopies} bản trong kho · ${s.totalUsers} bạn đọc`;
-        document.getElementById('statAvailable').textContent = `${s.availableCopies} cuốn`;
-        document.getElementById('statBorrowedSub').textContent = `${s.borrowedCopies} cuốn đang giữ/mượn`;
-        document.getElementById('statActiveOrders').textContent = `${s.reservedReservations + s.borrowedReservations} đơn`;
-        document.getElementById('statActiveSub').textContent = `${s.reservedReservations} Reserved · ${s.borrowedReservations} Borrowed`;
-        document.getElementById('statTotalOrders').textContent = `${s.totalReservations} yêu cầu`;
-        document.getElementById('statQueueSub').textContent =
-          `${s.pendingReservations} Pending · ${s.returnedReservations} Returned · ${s.rejectedReservations} Rejected`;
+      if (sRes.ok) {
+        const s = await sRes.json();
+        const pct = s.totalCopies > 0 ? Math.round((s.availableCopies / s.totalCopies) * 100) : 0;
+
+        document.getElementById('kpiBooks').textContent = s.totalBooks;
+        document.getElementById('kpiUsers').textContent = `${s.totalUsers} thẻ bạn đọc`;
+        document.getElementById('kpiTotalCopies').textContent = `Tổng cộng ${s.totalCopies} bản trong kho`;
+
+        document.getElementById('kpiAvailable').textContent = s.availableCopies;
+        document.getElementById('kpiRatio').textContent = `${pct}%`;
+        document.getElementById('kpiMeter').style.width = `${pct}%`;
+
+        document.getElementById('kpiActive').textContent = s.reservedReservations + s.borrowedReservations;
+        document.getElementById('kpiActiveBreakdown').textContent =
+          `${s.reservedReservations} giữ chỗ · ${s.borrowedReservations} đang mượn`;
+
+        document.getElementById('kpiTotalReservations').textContent = s.totalReservations;
+        document.getElementById('kpiQueueBreakdown').textContent =
+          `${s.pendingReservations} chờ · ${s.returnedReservations} đã trả · ${s.rejectedReservations} từ chối`;
+
+        document.getElementById('navOrderCount').textContent = s.totalReservations;
+
+        const qBadge = document.getElementById('queueLiveBadge');
+        if (s.pendingReservations > 0) {
+          qBadge.innerHTML = `<span class="dot pulse"></span>Đang xử lý (${s.pendingReservations})`;
+        } else {
+          qBadge.innerHTML = `<span class="dot online"></span>Đồng bộ`;
+        }
       }
     } catch (e) {
-      console.error('Stats/Health error:', e);
+      console.error(e);
     }
   }
 
-  async function loadUsers(selectedId = null) {
+  async function loadUsers(preferId = null) {
     try {
       const res = await fetch(`${API_URL}/users`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const users = await res.json();
+      cachedUsers = await res.json();
       const sel = document.getElementById('userSelect');
-      const prev = selectedId || sel.value;
+      const current = preferId || sel.value;
 
-      if (users.length === 0) {
+      if (cachedUsers.length === 0) {
         sel.innerHTML = '<option value="">Chưa có bạn đọc</option>';
         return;
       }
 
-      sel.innerHTML = users.map(u =>
-        `<option value="${escapeHtml(u.id)}">${escapeHtml(u.fullName)} (${escapeHtml(u.email || u.phoneNumber || 'Thẻ thư viện')})</option>`
+      sel.innerHTML = cachedUsers.map(u =>
+        `<option value="${esc(u.id)}">${esc(u.fullName)}</option>`
       ).join('');
 
-      if (prev && users.some(u => u.id === prev)) {
-        sel.value = prev;
+      if (current && cachedUsers.some(u => u.id === current)) {
+        sel.value = current;
       }
+      syncReaderHeader();
     } catch (e) {
-      document.getElementById('userSelect').innerHTML = '<option value="">Lỗi kết nối API</option>';
-      showAlert('Không thể kết nối đến Library API: ' + escapeHtml(e.message), 'danger', false);
+      toast('Không thể kết nối tới dịch vụ Library API.', true);
     }
+  }
+
+  function syncReaderHeader() {
+    const uid = document.getElementById('userSelect').value;
+    const u = cachedUsers.find(x => x.id === uid);
+    document.getElementById('readerInitials').textContent = getInitials(u?.fullName);
+    document.getElementById('activeReaderLabel').textContent = u
+      ? `${u.fullName} · ${u.email || u.phoneNumber || 'Thẻ tiêu chuẩn'}`
+      : 'Chưa chọn bạn đọc';
+  }
+
+  function onReaderChanged() {
+    syncReaderHeader();
+    loadUserReservations();
+  }
+
+  function setBookFilter(availOnly) {
+    bookAvailableOnly = availOnly;
+    document.getElementById('segBookAll').classList.toggle('active', !availOnly);
+    document.getElementById('segBookAvail').classList.toggle('active', availOnly);
+    loadBooks();
   }
 
   function debouncedLoadBooks() {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(loadBooks, 250);
-  }
-
-  function clearBookSearch() {
-    document.getElementById('bookSearchInput').value = '';
-    document.getElementById('availableOnlyCheck').checked = false;
-    loadBooks();
+    searchTimer = setTimeout(loadBooks, 220);
   }
 
   async function loadBooks() {
     try {
-      const search = document.getElementById('bookSearchInput').value.trim();
-      const availableOnly = document.getElementById('availableOnlyCheck').checked;
+      const kw = document.getElementById('bookSearchInput').value.trim();
       const params = new URLSearchParams();
-      if (search) params.set('search', search);
-      if (availableOnly) params.set('availableOnly', 'true');
+      if (kw) params.set('search', kw);
+      if (bookAvailableOnly) params.set('availableOnly', 'true');
 
       const res = await fetch(`${API_URL}/books?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const books = await res.json();
-      const list = document.getElementById('bookList');
-      document.getElementById('bookCountBadge').textContent = `${books.length} đầu sách`;
+      document.getElementById('navBookCount').textContent = books.length;
 
+      const list = document.getElementById('bookList');
       if (books.length === 0) {
-        list.innerHTML = '<div class="text-center text-muted py-4 small">Không tìm thấy đầu sách phù hợp với bộ lọc hiện tại.</div>';
+        list.innerHTML = '<div class="empty-state">Không tìm thấy đầu sách nào phù hợp với điều kiện lọc.</div>';
         return;
       }
 
       list.innerHTML = books.map(b => {
-        const isOutOfStock = b.availableCopies <= 0;
+        const out = b.availableCopies <= 0;
+        const low = b.availableCopies === 1;
+        const spineCls = out ? 'spine-empty' : (low ? 'spine-low' : 'spine-ok');
+        const fillColor = out ? '#e4e4e7' : (low ? '#f59e0b' : '#10b981');
+        const ratio = b.totalCopies > 0 ? Math.round((b.availableCopies / b.totalCopies) * 100) : 0;
+
         return `
-          <div class="book-item">
-            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-start gap-3">
-              <div class="flex-grow-1">
-                <div class="fw-semibold text-dark">${escapeHtml(b.title)}</div>
-                <div class="text-muted small mb-1">
-                  <span>Tác giả: <strong>${escapeHtml(b.author)}</strong></span> ·
-                  <span>ISBN: <code>${escapeHtml(b.isbn || 'N/A')}</code></span>
+          <div class="book-row">
+            <div class="book-meta-left">
+              <div class="spine-bar ${spineCls}"></div>
+              <div style="min-width:0;flex:1;">
+                <div class="book-title" onclick="showBookDetail('${esc(b.id)}')">${esc(b.title)}</div>
+                <div class="book-sub">
+                  ${esc(b.author)} &nbsp;·&nbsp; <span class="mono">ISBN ${esc(b.isbn || '—')}</span>
                 </div>
-                <p class="text-secondary small mb-2">${escapeHtml(b.description || '')}</p>
-                <div class="d-flex flex-wrap align-items-center gap-2">
-                  <span class="badge ${isOutOfStock ? 'bg-danger' : 'bg-success'}">
-                    Khả dụng: ${b.availableCopies} / ${b.totalCopies} bản
+                <p class="book-desc">${esc(b.description || '')}</p>
+                <div class="stock-strip">
+                  <span class="stock-pill tabular">
+                    Còn <strong>${b.availableCopies}</strong>/${b.totalCopies} bản
                   </span>
-                  <button class="btn btn-link btn-sm p-0 text-decoration-none small" onclick="showBookDetail('${escapeHtml(b.id)}')">
-                    <i class="bi bi-info-circle me-1"></i>Chi tiết &amp; Tồn kho
-                  </button>
+                  <div class="mini-bar">
+                    <div class="mini-bar-fill" style="width:${ratio}%;background:${fillColor};"></div>
+                  </div>
+                  <button class="link-btn" onclick="showBookDetail('${esc(b.id)}')">Chi tiết &amp; kho</button>
                 </div>
               </div>
-              <div class="d-flex flex-sm-column gap-1 align-items-stretch text-end" style="min-width: 148px;">
-                <button class="btn btn-sm ${isOutOfStock ? 'btn-outline-danger' : 'btn-primary'}"
-                        onclick="reserveBook('${escapeHtml(b.id)}')">
-                  <i class="bi ${isOutOfStock ? 'bi-exclamation-circle' : 'bi-send'} me-1"></i>${isOutOfStock ? 'Đặt thử (Hết bản)' : 'Đặt mượn ngay'}
-                </button>
-                <button class="btn btn-outline-secondary btn-sm" style="font-size: 0.74rem;"
-                        title="Gửi đồng thời 3 yêu cầu đặt sách vào RabbitMQ để kiểm thử chống Overbooking"
-                        onclick="burstReserveBook('${escapeHtml(b.id)}', 3)">
-                  <i class="bi bi-layers me-1"></i>Test Đồng Thời (x3)
-                </button>
-              </div>
+            </div>
+
+            <div class="book-actions">
+              <button class="btn btn-sm ${out ? 'btn-secondary' : 'btn-primary'}" onclick="reserveBook('${esc(b.id)}')">
+                ${out ? 'Gửi thử (Hết bản)' : 'Đặt mượn'}
+              </button>
+              <button class="btn btn-ghost btn-sm" title="Bắn đồng thời 3 yêu cầu song song vào RabbitMQ để kiểm chứng chống Overbooking" onclick="burstReserveBook('${esc(b.id)}', 3)">
+                Mô phỏng x3
+              </button>
             </div>
           </div>
         `;
       }).join('');
     } catch (e) {
-      document.getElementById('bookList').innerHTML =
-        '<div class="text-danger text-center py-3 small">Không tải được danh mục sách!</div>';
+      document.getElementById('bookList').innerHTML = '<div class="empty-state">Không tải được danh mục sách.</div>';
     }
   }
 
   async function showBookDetail(bookId) {
     try {
       const res = await fetch(`${API_URL}/books/${bookId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error();
       const b = await res.json();
 
-      document.getElementById('bookDetailBody').innerHTML = `
-        <h6 class="fw-bold mb-1">${escapeHtml(b.title)}</h6>
-        <div class="text-muted small mb-2">Tác giả: <strong>${escapeHtml(b.author)}</strong> · ISBN: <code>${escapeHtml(b.isbn || 'N/A')}</code></div>
-        <p class="small text-secondary border-bottom pb-2">${escapeHtml(b.description || 'Không có mô tả.')}</p>
-        <div class="row g-2 text-center mb-3">
-          <div class="col-3">
-            <div class="border rounded py-2 bg-light">
-              <div class="fw-bold">${b.totalCopies}</div>
-              <div class="text-muted" style="font-size:0.7rem;">Tổng bản</div>
-            </div>
+      document.getElementById('bookDetailContent').innerHTML = `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:16px;font-weight:600;letter-spacing:-0.02em;margin-bottom:4px;">${esc(b.title)}</div>
+          <div style="font-size:12.5px;color:var(--text-muted);">${esc(b.author)} · <span class="mono">${esc(b.isbn || 'N/A')}</span></div>
+        </div>
+
+        <p style="font-size:13px;color:var(--text-secondary);line-height:1.6;padding-bottom:16px;border-bottom:1px solid var(--border);">
+          ${esc(b.description || 'Chưa có mô tả chi tiết cho tài liệu này.')}
+        </p>
+
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:16px 0;">
+          <div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;">
+            <div style="font-size:11.5px;color:var(--text-muted);">Khả dụng / Tổng bản</div>
+            <div class="tabular" style="font-size:20px;font-weight:600;margin-top:2px;">${b.availableCopies} / ${b.totalCopies}</div>
           </div>
-          <div class="col-3">
-            <div class="border rounded py-2 bg-light">
-              <div class="fw-bold text-success">${b.availableCopies}</div>
-              <div class="text-muted" style="font-size:0.7rem;">Khả dụng</div>
-            </div>
-          </div>
-          <div class="col-3">
-            <div class="border rounded py-2 bg-light">
-              <div class="fw-bold text-primary">${b.reservedCount ?? 0}</div>
-              <div class="text-muted" style="font-size:0.7rem;">Đang giữ</div>
-            </div>
-          </div>
-          <div class="col-3">
-            <div class="border rounded py-2 bg-light">
-              <div class="fw-bold text-dark">${b.borrowedCount ?? 0}</div>
-              <div class="text-muted" style="font-size:0.7rem;">Đang mượn</div>
-            </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;">
+            <div style="font-size:11.5px;color:var(--text-muted);">Đang giữ / Đang mượn</div>
+            <div class="tabular" style="font-size:20px;font-weight:600;margin-top:2px;">${b.reservedCount ?? 0} / ${b.borrowedCount ?? 0}</div>
           </div>
         </div>
-        <div class="border-top pt-2">
-          <label class="form-label small fw-semibold mb-1">Điều chỉnh tổng số bản trong kho (PUT /books/{id}):</label>
-          <div class="input-group input-group-sm">
-            <input type="number" id="editTotalCopiesInput" class="form-control" value="${b.totalCopies}" min="1" max="200">
-            <button class="btn btn-outline-primary" type="button" onclick="updateBookCopies('${escapeHtml(b.id)}')">Cập nhật số bản</button>
+
+        <div style="background:var(--bg-canvas);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-top:18px;">
+          <label style="display:block;font-size:12px;font-weight:600;margin-bottom:8px;">Điều chỉnh tổng số bản lưu kho</label>
+          <div style="display:flex;gap:8px;">
+            <input type="number" id="editTotalCopiesInput" class="input-clean no-icon tabular" value="${b.totalCopies}" min="1" max="500">
+            <button class="btn btn-primary" type="button" onclick="updateBookCopies('${esc(b.id)}')">Cập nhật</button>
           </div>
-          <div class="text-muted mt-2 mono-code">Book ID: ${escapeHtml(b.id)}</div>
+          <div class="mono" style="font-size:11px;color:var(--text-faint);margin-top:10px;">ID: ${esc(b.id)}</div>
         </div>
       `;
-      new bootstrap.Modal(document.getElementById('bookDetailModal')).show();
+      openDrawer('bookDetailDrawer');
     } catch (e) {
-      showAlert('Không thể tải chi tiết sách: ' + escapeHtml(e.message), 'danger');
+      toast('Không thể tải thông tin chi tiết đầu sách.', true);
     }
   }
 
@@ -651,18 +1644,18 @@
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showAlert(escapeHtml(data.message || 'Không thể cập nhật số bản'), 'danger');
+      toast(esc(data.message || 'Cập nhật thất bại'), true);
       return;
     }
-    bootstrap.Modal.getInstance(document.getElementById('bookDetailModal'))?.hide();
-    showAlert('Đã cập nhật tổng số bản sách thành công!', 'success');
+    closeAllDrawers();
+    toast(`Đã cập nhật tổng số bản thành <code>${totalCopies}</code>.`);
     await refreshAll();
   }
 
   async function reserveBook(bookId) {
     const userId = document.getElementById('userSelect').value;
     if (!userId) {
-      showAlert('Vui lòng chọn bạn đọc trước khi gửi yêu cầu đặt mượn!', 'warning');
+      toast('Vui lòng chọn bạn đọc ở thanh điều hướng bên trái.', true);
       return;
     }
 
@@ -673,36 +1666,30 @@
         body: JSON.stringify({ bookId, userId })
       });
       const data = await res.json().catch(() => ({}));
-
       if (!res.ok) {
-        showAlert(escapeHtml(data.message || 'Lỗi gửi yêu cầu đặt mượn'), 'danger');
+        toast(esc(data.message || 'Không gửi được yêu cầu'), true);
         return;
       }
 
       document.getElementById('lookupIdInput').value = data.id;
-      showAlert(
-        `Đã tiếp nhận <strong>202 Accepted</strong> · Mã đơn: <code>${escapeHtml(data.id)}</code> · CorrelationId: <code>${escapeHtml(data.correlationId)}</code>. Worker đang duyệt bất đồng bộ...`,
-        'success'
-      );
+      toast(`Đã xếp hàng <code>202 Accepted</code> · Trace <code>${esc((data.correlationId || '').substring(0, 8))}</code>. Worker đang kiểm tra tồn kho...`);
 
-      await loadUserReservations();
-      await loadHealthAndStats();
+      await Promise.all([loadUserReservations(), loadHealthAndStats()]);
       schedulePendingPoll();
     } catch (e) {
-      showAlert('Lỗi kết nối máy chủ khi đặt mượn: ' + escapeHtml(e.message), 'danger');
+      toast('Mất kết nối tới máy chủ khi gửi yêu cầu.', true);
     }
   }
 
   async function burstReserveBook(bookId, count = 3) {
     const userId = document.getElementById('userSelect').value;
     if (!userId) {
-      showAlert('Vui lòng chọn bạn đọc trước khi chạy kiểm thử đồng thời!', 'warning');
+      toast('Vui lòng chọn bạn đọc trước khi chạy mô phỏng.', true);
       return;
     }
 
     try {
-      showAlert(`Đang bắn đồng thời <strong>${count} yêu cầu song song</strong> vào RabbitMQ để kiểm thử chống Overbooking...`, 'info', false);
-      const tasks = Array.from({ length: count }, () =>
+      const reqs = Array.from({ length: count }, () =>
         fetch(`${API_URL}/reservations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -710,214 +1697,169 @@
         }).then(r => r.json())
       );
 
-      const results = await Promise.all(tasks);
-      showAlert(
-        `Đã xếp hàng thành công <strong>${results.length} yêu cầu đồng thời</strong> vào RabbitMQ! Hãy quan sát Reservation Worker lần lượt duyệt số bản còn lại và tự động từ chối (<code>Rejected</code>) phần vượt quá tồn kho.`,
-        'primary'
-      );
+      const results = await Promise.all(reqs);
+      toast(`Đã đẩy song song <code>${results.length} yêu cầu</code> vào RabbitMQ. Theo dõi Worker duyệt tuần tự bên cột phải.`);
 
-      await loadUserReservations();
-      await loadHealthAndStats();
+      await Promise.all([loadUserReservations(), loadHealthAndStats()]);
       schedulePendingPoll();
     } catch (e) {
-      showAlert('Lỗi khi gửi yêu cầu đồng thời: ' + escapeHtml(e.message), 'danger');
+      toast('Không thể thực thi mô phỏng đồng thời.', true);
     }
   }
 
   function schedulePendingPoll() {
     clearTimeout(pollTimer);
-    document.getElementById('pollingIndicator').classList.remove('d-none');
-    let attempts = 0;
+    let ticks = 0;
 
-    const tick = async () => {
-      attempts++;
+    const run = async () => {
+      ticks++;
       await Promise.all([loadBooks(), loadHealthAndStats()]);
-      const stillPending = await loadUserReservations();
-      if (stillPending && attempts < 10) {
-        pollTimer = setTimeout(tick, 1200);
-      } else {
-        document.getElementById('pollingIndicator').classList.add('d-none');
+      const hasPending = await loadUserReservations();
+      if (hasPending && ticks < 10) {
+        pollTimer = setTimeout(run, 1100);
       }
     };
+    pollTimer = setTimeout(run, 900);
+  }
 
-    pollTimer = setTimeout(tick, 1000);
+  function setUserOrderFilter(activeOnly) {
+    userActiveOnly = activeOnly;
+    document.getElementById('segUserAll').classList.toggle('active', !activeOnly);
+    document.getElementById('segUserActive').classList.toggle('active', activeOnly);
+    loadUserReservations();
   }
 
   async function loadUserReservations() {
     const userId = document.getElementById('userSelect').value;
     if (!userId) return false;
 
-    const activeOnly = document.getElementById('urfActive').checked;
     try {
-      const qs = activeOnly ? '?activeOnly=true' : '';
+      const qs = userActiveOnly ? '?activeOnly=true' : '';
       const res = await fetch(`${API_URL}/users/${userId}/reservations${qs}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error();
       const items = await res.json();
-      const container = document.getElementById('reservationList');
+      const box = document.getElementById('userReservationFeed');
 
       if (items.length === 0) {
-        container.innerHTML = '<p class="text-center text-muted py-3 small mb-0">Chưa có đơn đặt mượn nào trong mục này.</p>';
+        box.innerHTML = '<div class="empty-state">Chưa có phiếu đặt hoặc mượn sách nào trong chế độ lọc này.</div>';
         return false;
       }
 
-      container.innerHTML = items.map(r => `
-        <div class="border rounded p-2 mb-2 bg-white">
-          <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
-            <span class="fw-semibold small text-dark">${escapeHtml(r.bookTitle || 'Sách thư viện')}</span>
-            <span class="badge-status status-${escapeHtml(r.status)}">${escapeHtml(r.status)}</span>
+      box.innerHTML = items.map(r => `
+        <div class="feed-item">
+          <div class="feed-top">
+            <div class="feed-book">${esc(r.bookTitle || 'Tài liệu thư viện')}</div>
+            <span class="status-chip chip-${esc(r.status)}"><span class="chip-dot"></span>${esc(r.status)}</span>
           </div>
-          <div class="text-muted mono-code">
-            ID: <a href="#" class="text-decoration-none" onclick="fillAndLookup('${escapeHtml(r.id)}'); return false;">${escapeHtml(r.id)}</a>
+          <div class="feed-msg">${esc(r.reasonMessage || 'Đang nằm trong hàng đợi chờ Worker xử lý...')}</div>
+          <div class="feed-meta">
+            <span class="mono trace-link" onclick="inspectTrace('${esc(r.id)}')" title="Nhấn để xem dòng thời gian chi tiết">
+              #${esc(r.id.substring(0, 8))}
+            </span>
+            <span>${fmtDate(r.createdAt)}</span>
           </div>
-          ${r.correlationId ? `<div class="text-muted mono-code">Trace: ${escapeHtml(r.correlationId)}</div>` : ''}
-          <div class="text-secondary small my-1">${escapeHtml(r.reasonMessage || 'Đang chờ Worker xử lý...')}</div>
-          <div class="text-muted" style="font-size: 0.72rem;">Tạo lúc: ${fmtTime(r.createdAt)}</div>
-
-          <div class="d-flex flex-wrap gap-2 mt-2">
-            ${r.status === 'Reserved' ? `
-              <button class="btn btn-success btn-sm py-0 px-2" style="font-size: 0.75rem;" onclick="updateStatus('${escapeHtml(r.id)}', 'Borrowed')">
-                <i class="bi bi-box-arrow-in-down me-1"></i>Nhận sách (Borrowed)
-              </button>` : ''}
-            ${r.status === 'Borrowed' ? `
-              <button class="btn btn-secondary btn-sm py-0 px-2" style="font-size: 0.75rem;" onclick="updateStatus('${escapeHtml(r.id)}', 'Returned')">
-                <i class="bi bi-arrow-return-left me-1"></i>Trả sách (Returned)
-              </button>` : ''}
-            ${(r.status === 'Pending' || r.status === 'Reserved') ? `
-              <button class="btn btn-outline-danger btn-sm py-0 px-2" style="font-size: 0.75rem;" onclick="cancelReservation('${escapeHtml(r.id)}')">
-                <i class="bi bi-x-circle me-1"></i>Hủy đặt
-              </button>` : ''}
-          </div>
+          ${renderOrderActions(r)}
         </div>
       `).join('');
 
-      return items.some(i => i.status === 'Pending');
+      return items.some(x => x.status === 'Pending');
     } catch (e) {
-      console.error(e);
       return false;
     }
   }
 
-  async function updateStatus(reservationId, newStatus) {
-    try {
-      const res = await fetch(`${API_URL}/reservations/${reservationId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newStatus })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showAlert(escapeHtml(data.message || 'Lỗi cập nhật trạng thái'), 'danger');
-        return;
-      }
-      showAlert(`Đã chuyển trạng thái phiếu mượn sang <strong>${escapeHtml(data.status)}</strong>!`, 'success');
-      await refreshAll();
-    } catch (e) {
-      showAlert('Lỗi kết nối khi cập nhật trạng thái', 'danger');
+  function renderOrderActions(r) {
+    const buttons = [];
+    if (r.status === 'Reserved') {
+      buttons.push(`<button class="btn btn-primary btn-sm" onclick="updateStatus('${esc(r.id)}', 'Borrowed')">Nhận sách</button>`);
     }
-  }
-
-  async function cancelReservation(reservationId) {
-    try {
-      const res = await fetch(`${API_URL}/reservations/${reservationId}/cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'Bạn đọc chủ động hủy phiếu đặt mượn.' })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showAlert(escapeHtml(data.message || 'Không thể hủy phiếu'), 'danger');
-        return;
-      }
-      showAlert('Đã hủy phiếu đặt mượn và hoàn lại bản sách khả dụng (nếu đã giữ chỗ).', 'info');
-      await refreshAll();
-    } catch (e) {
-      showAlert('Lỗi kết nối khi hủy phiếu', 'danger');
+    if (r.status === 'Borrowed') {
+      buttons.push(`<button class="btn btn-secondary btn-sm" onclick="updateStatus('${esc(r.id)}', 'Returned')">Trả sách</button>`);
     }
+    if (r.status === 'Pending' || r.status === 'Reserved') {
+      buttons.push(`<button class="btn btn-subtle-danger btn-sm" onclick="cancelReservation('${esc(r.id)}')">Hủy phiếu</button>`);
+    }
+    if (buttons.length === 0) return '';
+    return `<div style="display:flex;gap:6px;margin-top:9px;">${buttons.join('')}</div>`;
   }
 
-  function fillAndLookup(id) {
-    document.getElementById('lookupIdInput').value = id;
-    lookupReservation();
-  }
-
-  async function lookupReservation() {
-    const id = document.getElementById('lookupIdInput').value.trim();
-    const resultBox = document.getElementById('lookupResult');
-    if (!id) {
-      resultBox.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">Vui lòng nhập mã GUID của đơn đặt mượn!</div>';
+  async function updateStatus(id, newStatus) {
+    const res = await fetch(`${API_URL}/reservations/${id}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newStatus })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast(esc(data.message || 'Không thể cập nhật trạng thái'), true);
       return;
     }
+    toast(`Đã chuyển trạng thái phiếu sang <code>${esc(data.status)}</code>.`);
+    await refreshAll();
+  }
 
-    try {
-      const res = await fetch(`${API_URL}/reservations/${encodeURIComponent(id)}`);
-      if (!res.ok) {
-        resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Không tìm thấy đơn đặt mượn với mã GUID này.</div>';
-        return;
-      }
-      const d = await res.json();
-      resultBox.innerHTML = `
-        <div class="border rounded p-2 bg-light small">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="fw-bold text-dark">${escapeHtml(d.bookTitle)}</span>
-            <span class="badge-status status-${escapeHtml(d.status)}">${escapeHtml(d.status)}</span>
-          </div>
-          <div class="text-muted">Bạn đọc: <strong>${escapeHtml(d.userName)}</strong> (${escapeHtml(d.userEmail || 'N/A')})</div>
-          <div class="mono-code text-muted">CorrelationId: ${escapeHtml(d.correlationId || 'N/A')}</div>
-          <div class="text-secondary my-1">${escapeHtml(d.reasonMessage || '')}</div>
-          <hr class="my-1">
-          <div class="text-muted" style="font-size: 0.72rem;">
-            <div>1. Tiếp nhận (Pending): ${fmtTime(d.createdAt)}</div>
-            <div>2. Worker xử lý: ${fmtTime(d.processedAt)}</div>
-            <div>3. Nhận sách (Borrowed): ${fmtTime(d.borrowedAt)}</div>
-            <div>4. Trả sách (Returned): ${fmtTime(d.returnedAt)}</div>
-          </div>
-        </div>`;
-    } catch (e) {
-      resultBox.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Lỗi định dạng mã GUID hoặc kết nối API!</div>';
+  async function cancelReservation(id) {
+    const res = await fetch(`${API_URL}/reservations/${id}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'Hủy phiếu từ bảng điều khiển Web.' })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast(esc(data.message || 'Không thể hủy phiếu'), true);
+      return;
     }
+    toast('Đã hủy phiếu đặt trước và hoàn lại bản sách khả dụng.');
+    await refreshAll();
+  }
+
+  function setAdminStatus(btn) {
+    document.querySelectorAll('#adminSegGroup .seg-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    adminStatusFilter = btn.getAttribute('data-status') || '';
+    loadAllReservations();
   }
 
   function debouncedLoadAdmin() {
     clearTimeout(adminTimer);
-    adminTimer = setTimeout(loadAllReservations, 250);
+    adminTimer = setTimeout(loadAllReservations, 220);
   }
 
   async function loadAllReservations() {
     try {
-      const status = document.getElementById('adminStatusFilter').value;
-      const search = document.getElementById('adminSearchInput').value.trim();
+      const kw = document.getElementById('adminSearchInput').value.trim();
       const params = new URLSearchParams();
-      if (status) params.set('status', status);
-      if (search) params.set('search', search);
+      if (adminStatusFilter) params.set('status', adminStatusFilter);
+      if (kw) params.set('search', kw);
 
       const res = await fetch(`${API_URL}/reservations?${params.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error();
       const rows = await res.json();
-      const tbody = document.getElementById('adminReservationTable');
+      const tbody = document.getElementById('adminTableBody');
 
       if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Không có đơn đặt mượn nào khớp bộ lọc.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Không có bản ghi nào khớp bộ lọc hiện tại.</td></tr>';
         return;
       }
 
       tbody.innerHTML = rows.map(r => `
         <tr>
-          <td class="mono-code">
-            <div><a href="#" onclick="fillAndLookup('${escapeHtml(r.id)}'); bootstrap.Tab.getOrCreateInstance(document.getElementById('reader-tab')).show(); return false;">${escapeHtml(r.id.substring(0, 8))}...</a></div>
-            <div class="text-muted">${escapeHtml((r.correlationId || '').substring(0, 12))}</div>
+          <td class="mono">
+            <div><span class="trace-link" onclick="inspectTrace('${esc(r.id)}')">#${esc(r.id.substring(0, 8))}</span></div>
+            <div style="font-size:11px;color:var(--text-faint);">${esc((r.correlationId || '—').substring(0, 13))}</div>
           </td>
           <td>
-            <div class="fw-semibold">${escapeHtml(r.userName)}</div>
-            <div class="text-muted" style="font-size:0.72rem;">${escapeHtml(r.userPhone || '')}</div>
+            <div style="font-weight:500;">${esc(r.userName)}</div>
+            <div style="font-size:11.5px;color:var(--text-muted);">${esc(r.userPhone || '')}</div>
           </td>
-          <td class="fw-medium">${escapeHtml(r.bookTitle)}</td>
-          <td><span class="badge-status status-${escapeHtml(r.status)}">${escapeHtml(r.status)}</span></td>
-          <td class="text-secondary" style="max-width: 240px;">${escapeHtml(r.reasonMessage || '')}</td>
-          <td class="text-muted" style="font-size:0.75rem;">${fmtTime(r.createdAt)}</td>
-          <td class="text-end text-nowrap">
-            ${r.status === 'Reserved' ? `<button class="btn btn-success btn-sm py-0 px-2 me-1" onclick="updateStatus('${escapeHtml(r.id)}', 'Borrowed')">Giao sách</button>` : ''}
-            ${r.status === 'Borrowed' ? `<button class="btn btn-secondary btn-sm py-0 px-2 me-1" onclick="updateStatus('${escapeHtml(r.id)}', 'Returned')">Nhận trả</button>` : ''}
-            ${(r.status === 'Pending' || r.status === 'Reserved') ? `<button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="cancelReservation('${escapeHtml(r.id)}')">Hủy</button>` : ''}
+          <td style="font-weight:500;">${esc(r.bookTitle)}</td>
+          <td><span class="status-chip chip-${esc(r.status)}"><span class="chip-dot"></span>${esc(r.status)}</span></td>
+          <td style="color:var(--text-secondary);max-width:260px;">${esc(r.reasonMessage || '')}</td>
+          <td class="tabular" style="color:var(--text-muted);white-space:nowrap;">${fmtDate(r.createdAt)}</td>
+          <td style="text-align:right;white-space:nowrap;">
+            ${r.status === 'Reserved' ? `<button class="btn btn-primary btn-sm" onclick="updateStatus('${esc(r.id)}', 'Borrowed')">Giao sách</button>` : ''}
+            ${r.status === 'Borrowed' ? `<button class="btn btn-secondary btn-sm" onclick="updateStatus('${esc(r.id)}', 'Returned')">Thu hồi</button>` : ''}
+            ${(r.status === 'Pending' || r.status === 'Reserved') ? `<button class="btn btn-subtle-danger btn-sm" onclick="cancelReservation('${esc(r.id)}')">Hủy</button>` : ''}
           </td>
         </tr>
       `).join('');
@@ -926,13 +1868,87 @@
     }
   }
 
-  function openBookModal() {
-    document.getElementById('newBookTitle').value = '';
-    document.getElementById('newBookAuthor').value = '';
-    document.getElementById('newBookIsbn').value = '';
-    document.getElementById('newBookCopies').value = '2';
-    document.getElementById('newBookDesc').value = '';
-    new bootstrap.Modal(document.getElementById('addBookModal')).show();
+  function inspectTrace(id) {
+    document.getElementById('lookupIdInput').value = id;
+    switchView('trace');
+    lookupReservation();
+  }
+
+  async function lookupReservation() {
+    const id = document.getElementById('lookupIdInput').value.trim();
+    const box = document.getElementById('traceResultArea');
+    if (!id) {
+      toast('Vui lòng nhập mã GUID của đơn đặt mượn.', true);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/reservations/${encodeURIComponent(id)}`);
+      if (!res.ok) {
+        box.innerHTML = '<div class="empty-state" style="color:var(--rose);border:1px solid #fecdd3;background:#fff1f2;border-radius:var(--radius-md);">Không tìm thấy vận đơn tương ứng với mã GUID đã nhập.</div>';
+        return;
+      }
+
+      const d = await res.json();
+      const isRej = d.status === 'Rejected';
+
+      box.innerHTML = `
+        <div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:18px;background:var(--bg-surface);">
+          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+            <div>
+              <div style="font-size:15px;font-weight:600;">${esc(d.bookTitle)}</div>
+              <div style="font-size:12.5px;color:var(--text-muted);margin-top:2px;">
+                Bạn đọc: <strong>${esc(d.userName)}</strong> (${esc(d.userEmail || 'N/A')})
+              </div>
+            </div>
+            <span class="status-chip chip-${esc(d.status)}"><span class="chip-dot"></span>${esc(d.status)}</span>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:14px;font-size:12px;">
+            <div>
+              <span style="color:var(--text-muted);">Reservation ID:</span>
+              <div class="mono" style="margin-top:2px;">${esc(d.id)}</div>
+            </div>
+            <div>
+              <span style="color:var(--text-muted);">Correlation ID (Distributed Trace):</span>
+              <div class="mono" style="margin-top:2px;">${esc(d.correlationId || '—')}</div>
+            </div>
+            <div>
+              <span style="color:var(--text-muted);">Phản hồi từ Worker:</span>
+              <div style="margin-top:2px;font-weight:500;">${esc(d.reasonMessage || 'Đang xử lý...')}</div>
+            </div>
+          </div>
+
+          <div class="timeline-grid">
+            <div class="step-card done">
+              <div class="step-num mono">CHẶNG 01 · API</div>
+              <div class="step-title">Tiếp nhận (Pending)</div>
+              <div class="step-time tabular">${fmtDate(d.createdAt)}</div>
+            </div>
+
+            <div class="step-card ${isRej ? 'rejected' : (d.processedAt ? 'done' : '')}">
+              <div class="step-num mono">CHẶNG 02 · WORKER</div>
+              <div class="step-title">${isRej ? 'Từ chối / Hủy' : 'Duyệt giữ sách (Reserved)'}</div>
+              <div class="step-time tabular">${fmtDate(d.processedAt)}</div>
+            </div>
+
+            <div class="step-card ${d.borrowedAt ? 'done' : ''}">
+              <div class="step-num mono">CHẶNG 03 · QUẦY</div>
+              <div class="step-title">Bàn giao (Borrowed)</div>
+              <div class="step-time tabular">${fmtDate(d.borrowedAt)}</div>
+            </div>
+
+            <div class="step-card ${d.returnedAt ? 'done' : ''}">
+              <div class="step-num mono">CHẶNG 04 · KHO</div>
+              <div class="step-title">Hoàn trả (Returned)</div>
+              <div class="step-time tabular">${fmtDate(d.returnedAt)}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      toast('Định dạng mã GUID không hợp lệ hoặc mất kết nối.', true);
+    }
   }
 
   async function submitNewBook(ev) {
@@ -952,20 +1968,15 @@
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showAlert(escapeHtml(data.message || 'Lỗi thêm sách mới'), 'danger');
+      toast(esc(data.message || 'Không thể lưu đầu sách'), true);
       return;
     }
 
-    bootstrap.Modal.getInstance(document.getElementById('addBookModal'))?.hide();
-    showAlert(`Đã thêm đầu sách <strong>${escapeHtml(data.title)}</strong> (${data.totalCopies} bản)!`, 'success');
+    document.getElementById('addBookForm').reset();
+    document.getElementById('newBookCopies').value = '2';
+    closeAllDrawers();
+    toast(`Đã nhập kho đầu sách <code>${esc(data.title)}</code>.`);
     await refreshAll();
-  }
-
-  function openUserModal() {
-    document.getElementById('newUserName').value = '';
-    document.getElementById('newUserEmail').value = '';
-    document.getElementById('newUserPhone').value = '';
-    new bootstrap.Modal(document.getElementById('addUserModal')).show();
   }
 
   async function submitNewUser(ev) {
@@ -983,20 +1994,22 @@
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showAlert(escapeHtml(data.message || 'Lỗi đăng ký bạn đọc'), 'danger');
+      toast(esc(data.message || 'Không thể cấp thẻ bạn đọc'), true);
       return;
     }
 
-    bootstrap.Modal.getInstance(document.getElementById('addUserModal'))?.hide();
-    showAlert(`Đã tạo thẻ bạn đọc <strong>${escapeHtml(data.fullName)}</strong>!`, 'success');
+    document.getElementById('newUserName').value = '';
+    document.getElementById('newUserEmail').value = '';
+    document.getElementById('newUserPhone').value = '';
+    closeAllDrawers();
+    toast(`Đã kích hoạt thẻ cho <code>${esc(data.fullName)}</code>.`);
     await loadUsers(data.id);
-    await loadUserReservations();
-    await loadHealthAndStats();
+    await Promise.all([loadUserReservations(), loadHealthAndStats()]);
   }
 
   async function refreshAll() {
     await Promise.all([loadHealthAndStats(), loadBooks(), loadUserReservations()]);
-    if (document.getElementById('adminPane').classList.contains('active')) {
+    if (document.getElementById('view-operations').classList.contains('active')) {
       await loadAllReservations();
     }
   }
@@ -1006,7 +2019,7 @@
     await Promise.all([loadHealthAndStats(), loadBooks(), loadUserReservations()]);
   }
 
-  window.onload = init;
+  window.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
