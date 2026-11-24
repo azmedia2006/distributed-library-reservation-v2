@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 280" width="100%" height="100%" role="img" aria-label="Hệ thống Thư viện và Đặt mượn Sách Phân tán">
+  <defs>
+    <linearGradient id="paperBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#cbd5e1" fill-opacity="0.7"/>
+    </pattern>
+  </defs>
+
+  <rect width="1120" height="280" rx="14" fill="url(#paperBg)"/>
+  <rect width="1120" height="280" rx="14" fill="url(#dotGrid)"/>
+  <rect x="1" y="1" width="1118" height="278" rx="13" fill="none" stroke="#cbd5e1" stroke-width="1.5"/>
+
+  <!-- Left Accent Bar -->
+  <rect x="0" y="38" width="5" height="204" rx="2.5" fill="#1e3a8a"/>
+
+  <!-- Top Academic Tag -->
+  <g transform="translate(52, 38)">
+    <rect width="332" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+    <text x="14" y="17.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11.5" font-weight="600" fill="#1e40af">
+      HỌC PHẦN: PHÁT TRIỂN ỨNG DỤNG PHÂN TÁN • ĐỀ TÀI 20
+    </text>
+  </g>
+
+  <!-- Title & Subtitle -->
+  <text x="52" y="108" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="33" font-weight="700" fill="#0f172a" letter-spacing="-0.6">
+    Hệ Thống Thư Viện &amp; Đặt Mượn Sách Phân Tán
+  </text>
+  <text x="52" y="140" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="500" fill="#334155">
+    Xử lý hàng đợi bất đồng bộ với ASP.NET Core (.NET 10), RabbitMQ, Background Worker &amp; PostgreSQL 16
+  </text>
+  <text x="52" y="168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13.5" fill="#64748b">
+    Loại bỏ nghẽn khóa cơ sở dữ liệu • Chống Overbooking bằng giao dịch Serializable • Tự phục hồi qua Retry, DLQ &amp; Pending Sweep
+  </text>
+
+  <!-- Bottom Key Metrics Strip -->
+  <g transform="translate(52, 196)">
+    <rect x="0" y="0" width="236" height="52" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
+    <text x="16" y="21" font-family="-apple-system, sans-serif" font-size="11" font-weight="600" fill="#64748b">KIẾN TRÚC ĐÓNG GÓI</text>
+    <text x="16" y="40" font-family="-apple-system, sans-serif" font-size="14" font-weight="700" fill="#0f172a">6 Docker Containers độc lập</text>
+
+    <rect x="252" y="0" width="246" height="52" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
+    <text x="268" y="21" font-family="-apple-system, sans-serif" font-size="11" font-weight="600" fill="#64748b">GIAO TIẾP &amp; HÀNG ĐỢI</text>
+    <text x="268" y="40" font-family="-apple-system, sans-serif" font-size="14" font-weight="700" fill="#c2410c">14 REST APIs + RabbitMQ DLQ</text>
+
+    <rect x="514" y="0" width="248" height="52" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
+    <text x="530" y="21" font-family="-apple-system, sans-serif" font-size="11" font-weight="600" fill="#64748b">TOÀN VẸN TỒN KHO</text>
+    <text x="530" y="40" font-family="-apple-system, sans-serif" font-size="14" font-weight="700" fill="#15803d">Idempotent &amp; Serializable Tx</text>
+
+    <rect x="778" y="0" width="238" height="52" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
+    <text x="794" y="21" font-family="-apple-system, sans-serif" font-size="11" font-weight="600" fill="#64748b">KIỂM THỬ &amp; TRUY VẾT</text>
+    <text x="794" y="40" font-family="-apple-system, sans-serif" font-size="14" font-weight="700" fill="#1e3a8a">8 xUnit Tests + Correlation ID</text>
+  </g>
+</svg>
