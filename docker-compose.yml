@@ -1,0 +1,102 @@
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: library_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: library_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - library_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d library_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: library_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - library_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  library-api:
+    build:
+      context: .
+      dockerfile: src/Library.API/Dockerfile
+    container_name: library_api
+    restart: always
+    environment:
+      ConnectionStrings__LibraryDb: "Host=postgres-db;Port=5432;Database=library_db;Username=postgres;Password=postgrespassword"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Port: "5672"
+      RabbitMQ__UserName: "guest"
+      RabbitMQ__Password: "guest"
+    ports:
+      - "5005:5000"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - library_network
+
+  reservation-worker:
+    build:
+      context: .
+      dockerfile: src/Library.Worker/Dockerfile
+    container_name: library_reservation_worker
+    restart: always
+    environment:
+      ConnectionStrings__LibraryDb: "Host=postgres-db;Port=5432;Database=library_db;Username=postgres;Password=postgrespassword"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Port: "5672"
+      RabbitMQ__UserName: "guest"
+      RabbitMQ__Password: "guest"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - library_network
+
+  web-client:
+    build:
+      context: .
+      dockerfile: src/Library.WebClient/Dockerfile
+    container_name: library_web_client
+    restart: always
+    environment:
+      ApiUrl: "http://library-api:5000"
+    ports:
+      - "8088:8080"
+    depends_on:
+      - library-api
+    networks:
+      - library_network
+
+networks:
+  library_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
